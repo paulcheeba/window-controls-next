@@ -12,13 +12,13 @@ Dock a fixed taskbar above or below the Foundry UI. It nudges the UI and canvas 
 
 <img width="627" height="39" alt="image" src="https://github.com/user-attachments/assets/c91b0d71-1275-414a-916b-8600891646ab" />
 
+### Taskbar Buttons
+Taskbar buttons are sorted (pinned first, then type, then title), show a tooltip with the full title, and support hover preview.
+
 ### Minimize
 Adds a minimize button to supported sheets. Minimize is instant: the sheet is hidden and represented by a taskbar button.
 
 <img width="808" height="40" alt="image" src="https://github.com/user-attachments/assets/906122e5-6051-4dab-82c1-c40330eab8a7" />
-
-### Taskbar Buttons
-Taskbar buttons are sorted (pinned first, then type, then title), show a tooltip with the full title, and support hover preview.
 
 ### Pin
 Pin a sheet so it stays available on the taskbar and can optionally be restored across sessions.
