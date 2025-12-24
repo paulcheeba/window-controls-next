@@ -8,12 +8,12 @@ Window Taskbar and Window Buttons: Minimize, Maximize and Pin floating Windows t
 ## Features
 
 ### Taskbar (Top/Bottom)
-Dock a fixed taskbar above or below the Foundry UI. It reserves space so it cannot be covered by windows and the canvas resizes correctly.
+Dock a fixed taskbar above or below the Foundry UI. It nudges the UI and canvas resizes correctly.
 
 <img width="627" height="39" alt="image" src="https://github.com/user-attachments/assets/c91b0d71-1275-414a-916b-8600891646ab" />
 
 ### Minimize
-Adds a minimize button to supported sheets. In taskbar mode, minimize is instant: the sheet is hidden and represented by a taskbar button.
+Adds a minimize button to supported sheets. Minimize is instant: the sheet is hidden and represented by a taskbar button.
 
 <img width="808" height="40" alt="image" src="https://github.com/user-attachments/assets/906122e5-6051-4dab-82c1-c40330eab8a7" />
 
@@ -24,6 +24,9 @@ Taskbar buttons are sorted (pinned first, then type, then title), show a tooltip
 Pin a sheet so it stays available on the taskbar and can optionally be restored across sessions.
 
 <img width="805" height="44" alt="image" src="https://github.com/user-attachments/assets/19cd7f53-4f20-4e3d-8917-0b85c2166f8e" />
+
+### Quick view on hover
+Hover your mouse over a nminimized window tab for a quick view of the sheet without reopening it.
 
 ### Remember Pinned Windows
 When enabled, pinned sheets are remembered by Document UUID and restored on next load.
