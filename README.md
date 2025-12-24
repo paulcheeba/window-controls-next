@@ -26,7 +26,7 @@ Pin a sheet so it stays available on the taskbar and can optionally be restored 
 <img width="805" height="44" alt="image" src="https://github.com/user-attachments/assets/19cd7f53-4f20-4e3d-8917-0b85c2166f8e" />
 
 ### Quick view on hover
-Hover your mouse over a nminimized window tab for a quick view of the sheet without reopening it.
+Hover your mouse over a minimized window tab for a quick view of the sheet without reopening it.
 
 ### Remember Pinned Windows
 When enabled, pinned sheets are remembered by Document UUID and restored on next load.
