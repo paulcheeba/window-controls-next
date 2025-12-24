@@ -1,3 +1,12 @@
+### 13.0.0.1
+* Compatibility: Foundry V13 support
+* Enhancement: Taskbar is docked above/below the UI (cannot be covered), and the Foundry viewport/canvas is resized to make room
+* Enhancement: Taskbar-only minimize is instant (hide/show without Foundry's native minimize animation)
+* Enhancement: Taskbar buttons show tooltip and support hover-preview
+* Enhancement: Pinned windows can be remembered across sessions via Document UUID
+* Bugfix: Prevent duplicate sheet windows for the same Document UUID
+* Behavior: Window Controls only applies to Document sheets (no sidebar directories/popouts)
+
 ### 1.12.0
 * Compatibility: Foundry V12 support
 
