@@ -2,21 +2,20 @@
 
 # Window Controls (Foundry VTT v13)
 
-Window taskbar + window header buttons for Document sheets: Minimize, Maximize, and Pin.
+Window Taskbar and Window Buttons: Minimize, Maximize and Pin floating Windows to a top or bottom taskbar, configurable, allows minimizing windows on a fixed horizontal taskbar located on top or bottom. Updated for Foundry VTT v13+.
 
-This fork targets Foundry VTT v13+ and focuses on a taskbar-only workflow: minimized sheets are hidden and represented by taskbar buttons.
-
-Screenshots are being refreshed.
 
 ## Features
-### Sheet-Only Scope
-Only affects Document sheets (Actor/Item/Journal/etc). It does not add controls to sidebar directories or other non-sheet UI.
 
 ### Taskbar (Top/Bottom)
 Dock a fixed taskbar above or below the Foundry UI. It reserves space so it cannot be covered by windows and the canvas resizes correctly.
 
+<img width="627" height="39" alt="image" src="https://github.com/user-attachments/assets/c91b0d71-1275-414a-916b-8600891646ab" />
+
 ### Minimize
 Adds a minimize button to supported sheets. In taskbar mode, minimize is instant: the sheet is hidden and represented by a taskbar button.
+
+<img width="808" height="40" alt="image" src="https://github.com/user-attachments/assets/906122e5-6051-4dab-82c1-c40330eab8a7" />
 
 ### Taskbar Buttons
 Taskbar buttons are sorted (pinned first, then type, then title), show a tooltip with the full title, and support hover preview.
@@ -24,15 +23,13 @@ Taskbar buttons are sorted (pinned first, then type, then title), show a tooltip
 ### Pin
 Pin a sheet so it stays available on the taskbar and can optionally be restored across sessions.
 
+<img width="805" height="44" alt="image" src="https://github.com/user-attachments/assets/19cd7f53-4f20-4e3d-8917-0b85c2166f8e" />
+
 ### Remember Pinned Windows
 When enabled, pinned sheets are remembered by Document UUID and restored on next load.
 
 ### Maximize
 Optional maximize button to expand a sheet to available space.
-
-# Appreciations
-* Thanks to the FoundryVTT Discord community for the amazing issue reports and feedback.
-* Thanks to Grayhead for the German translations!
 
 # Credits
 * Original module concept and early implementations: JeansenVaars
