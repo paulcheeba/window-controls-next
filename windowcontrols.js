@@ -1,7 +1,11 @@
 class WindowControls {
 
-  static noLibWrapper = false;
   static externalMinimize = false;
+
+  static _PINNED_FLAG_SCOPE = 'window-controls';
+  static _PINNED_FLAG_KEY = 'pinned-window-ids';
+
+  static _rememberedPinnedIds = new Set();
 
   static minimizedStash = {};
   static cssMinimizedSize = 150;
@@ -14,7 +18,654 @@ class WindowControls {
   static getTaskbarTop = () => 2;
   static getTaskbarBot = () => $("#board").height() - 40;
 
-  static debouncedReload = debounce(() => window.location.reload(), 100);
+  static debouncedReload = (foundry?.utils?.debounce ?? globalThis.debounce)(() => window.location.reload(), 100);
+
+  static _taskbarEntries = new Map();
+
+  // Hover preview (taskbar buttons)
+  static _TASKBAR_HOVER_PREVIEW_DELAY_MS = 1000;
+
+  static _patches = new Map();
+
+  static _wrapMethod({ target, method, wrapper, name }) {
+    const original = target?.[method];
+    if (typeof original !== 'function') return;
+    const key = `${name ?? target?.constructor?.name ?? 'target'}.${method}`;
+    if (WindowControls._patches.has(key)) return;
+    WindowControls._patches.set(key, original);
+    target[method] = function (...args) {
+      return wrapper.call(this, original.bind(this), ...args);
+    };
+  }
+
+
+  static _isMinimized(app) {
+    // In taskbar mode, a hidden-to-taskbar window should be treated as minimized.
+    if (WindowControls._isHiddenToTaskbar(app)) return true;
+    if (typeof app?.minimized === 'boolean') return app.minimized;
+    return !!app?._minimized;
+  }
+
+  static _getAppDocumentUuid(app) {
+    const docUuid = app?.document?.uuid ?? app?.object?.uuid;
+    if (typeof docUuid === 'string' && docUuid.length) return docUuid;
+    return null;
+  }
+
+  static _isTargetSheet(app) {
+    // Only affect Document-backed sheets.
+    // Sidebar directories/tabs and other UI apps do not have a Document UUID.
+    return !!WindowControls._getAppDocumentUuid(app);
+  }
+
+  /**
+   * Stable identity used for persistence (remember pinned) and for de-duplicating sheets.
+   * IMPORTANT: this must be resolvable after a reload.
+   */
+  static _getAppPersistentId(app) {
+    if (!app) return null;
+
+    // Only persist Document UUIDs.
+    return WindowControls._getAppDocumentUuid(app);
+  }
+
+  /**
+   * Runtime identity for taskbar bookkeeping.
+   * Prefer per-instance UUIDs when available (AppV2), otherwise fall back to a persisted id.
+   */
+  static _getAppRuntimeId(app) {
+    if (!app) return null;
+
+    const appUuid = app?.uuid;
+    if (typeof appUuid === 'string' && appUuid.length) return appUuid;
+
+    const persistentId = WindowControls._getAppPersistentId(app);
+    if (typeof persistentId === 'string' && persistentId.length) return persistentId;
+
+    if (app.appId != null) return String(app.appId);
+    return null;
+  }
+
+  static _getAppKey(app) {
+    if (!app) return null;
+
+    const runtimeId = WindowControls._getAppRuntimeId(app);
+    if (typeof runtimeId === 'string' && runtimeId.length) return runtimeId;
+
+    // Absolute fallback: stable per-instance key when neither app.uuid nor a document uuid is available.
+    if (app._wcAppKey) return app._wcAppKey;
+    const makeId = foundry?.utils?.randomID ?? (() => String(Math.random()).slice(2));
+    const base = app.id != null ? String(app.id) : (app?.constructor?.name ?? 'app');
+    app._wcAppKey = `wc-${base}-${makeId()}`;
+    return app._wcAppKey;
+  }
+
+  static async _enforceSingleInstanceByPersistentId(app) {
+    // Only enforce for real documents; allow SidebarTab popouts.
+    const persistentId = WindowControls._getAppDocumentUuid(app);
+    if (!persistentId) return;
+
+    // Avoid recursion if close triggers another render hook.
+    if (app._wcClosingDuplicate === true) return;
+
+    const myKey = WindowControls._getAppKey(app);
+    if (!myKey) return;
+
+    const windows = Object.values(ui?.windows ?? {});
+    const others = windows.filter(w => w && w !== app && WindowControls._getAppDocumentUuid(w) === persistentId);
+    if (!others.length) return;
+
+    // Keep the first existing one, transfer pinned state if needed, and close the new duplicate.
+    const existing = others[0];
+    try {
+      if (app?._pinned === true && existing?._pinned !== true) {
+        WindowControls.applyPinnedMode(existing);
+        if (game.settings.get('window-controls', 'rememberPinnedWindows')) void WindowControls.persistPinned(existing);
+      }
+
+      // Ensure existing is visible and focused.
+      if (WindowControls._isHiddenToTaskbar(existing) || WindowControls._isMinimized(existing)) {
+        await WindowControls._restoreFromTaskbar(existing);
+      } else {
+        WindowControls._bringToFront(existing);
+      }
+
+      // Close the duplicate (this one).
+      app._wcClosingDuplicate = true;
+      if (typeof app.close === 'function') {
+        try { await app.close({ force: true }); }
+        catch { await app.close(); }
+      } else if (typeof app.render === 'function') {
+        app.render(false);
+      }
+    } finally {
+      app._wcClosingDuplicate = false;
+    }
+  }
+
+  static _getTaskbarSortData(entry, key) {
+    const app = entry?.app;
+    const pinned = entry?.pinned === true || app?._pinned === true;
+    const docName = app?.document?.documentName;
+    const type = docName || (app?.tabName ? 'SidebarTab' : (app?.constructor?.name ?? 'App'));
+    const title = String(app?.title ?? app?.options?.title ?? app?.constructor?.name ?? 'Window');
+    return {
+      pinnedRank: pinned ? 0 : 1,
+      type: type.toLowerCase(),
+      title: title.toLowerCase(),
+      key: String(key ?? ''),
+    };
+  }
+
+  static _sortTaskbarButtons() {
+    const section = WindowControls._getTaskbarSection();
+    if (!section) return;
+
+    const buttons = Array.from(section.querySelectorAll('button.wc-taskbar-btn'))
+      .filter(b => b instanceof HTMLElement);
+    if (buttons.length <= 1) return;
+
+    const getKey = (btn) => btn?.dataset?.wcAppKey;
+    buttons.sort((a, b) => {
+      const aKey = getKey(a);
+      const bKey = getKey(b);
+      const aEntry = aKey ? WindowControls._taskbarEntries.get(String(aKey)) : null;
+      const bEntry = bKey ? WindowControls._taskbarEntries.get(String(bKey)) : null;
+
+      const aa = WindowControls._getTaskbarSortData(aEntry, aKey);
+      const bb = WindowControls._getTaskbarSortData(bEntry, bKey);
+
+      if (aa.pinnedRank !== bb.pinnedRank) return aa.pinnedRank - bb.pinnedRank; // pinned first
+      if (aa.type !== bb.type) return aa.type.localeCompare(bb.type);
+      if (aa.title !== bb.title) return aa.title.localeCompare(bb.title);
+      return aa.key.localeCompare(bb.key);
+    });
+
+    for (const btn of buttons) section.appendChild(btn);
+  }
+
+  static _ensureHoverPreviewHandlers(entry, app) {
+    if (!entry || !entry.button || !(entry.button instanceof HTMLElement) || !app) return;
+    if (entry._wcHoverHandlersInstalled === true) return;
+    entry._wcHoverHandlersInstalled = true;
+
+    const btn = entry.button;
+
+    const startTimer = () => {
+      entry._wcHoveringButton = true;
+      if (entry._wcHoverTimer) clearTimeout(entry._wcHoverTimer);
+      entry._wcHoverTimer = setTimeout(() => {
+        if (!entry._wcHoveringButton) return;
+        const targetApp = entry.app;
+        if (!targetApp) return;
+        if (!WindowControls._isHiddenToTaskbar(targetApp)) return;
+        WindowControls._startTaskbarHoverPreview(entry, targetApp);
+      }, WindowControls._TASKBAR_HOVER_PREVIEW_DELAY_MS);
+    };
+
+    const stopTimerAndMaybeHide = () => {
+      entry._wcHoveringButton = false;
+      if (entry._wcHoverTimer) {
+        clearTimeout(entry._wcHoverTimer);
+        entry._wcHoverTimer = null;
+      }
+      WindowControls._stopTaskbarHoverPreviewIfNeeded(entry);
+    };
+
+    btn.addEventListener('mouseenter', startTimer);
+    btn.addEventListener('mouseleave', stopTimerAndMaybeHide);
+  }
+
+  static _startTaskbarHoverPreview(entry, app) {
+    if (!entry || !app) return;
+    if (!WindowControls._isHiddenToTaskbar(app)) return;
+
+    // Mark preview state and show the window.
+    entry._wcPreviewing = true;
+    WindowControls._showFromTaskbar(app);
+    WindowControls._bringToFront(app);
+
+    const el = WindowControls._getElement(app);
+    if (el && el.dataset) el.dataset.wcTaskbarPreview = '1';
+
+    // Keep it open while hovering the window too.
+    if (el && entry._wcWindowHoverHandlersInstalled !== true) {
+      entry._wcWindowHoverHandlersInstalled = true;
+      const onEnter = () => {
+        entry._wcHoveringWindow = true;
+      };
+      const onLeave = () => {
+        entry._wcHoveringWindow = false;
+        WindowControls._stopTaskbarHoverPreviewIfNeeded(entry);
+      };
+      el.addEventListener('mouseenter', onEnter);
+      el.addEventListener('mouseleave', onLeave);
+      entry._wcWindowHoverHandlers = { el, onEnter, onLeave };
+    }
+  }
+
+  static _stopTaskbarHoverPreviewIfNeeded(entry) {
+    if (!entry?._wcPreviewing) return;
+    if (entry._wcHoveringButton || entry._wcHoveringWindow) return;
+
+    const app = entry.app;
+    if (!app) return;
+
+    // If user actually restored it (not hidden anymore), do not re-hide.
+    if (!WindowControls._isHiddenToTaskbar(app)) {
+      // But if it was only shown by preview, it *will* be visible; we still want to hide.
+      // Use the dataset marker to decide.
+      const el = WindowControls._getElement(app);
+      if (!el || el.dataset?.wcTaskbarPreview !== '1') {
+        entry._wcPreviewing = false;
+        return;
+      }
+    }
+
+    // Re-hide the previewed window.
+    const el = WindowControls._getElement(app);
+    if (el && el.dataset) delete el.dataset.wcTaskbarPreview;
+    WindowControls._hideToTaskbar(app);
+    entry._wcPreviewing = false;
+  }
+
+  static _getRememberedPinnedList() {
+    const raw = game.user.getFlag(WindowControls._PINNED_FLAG_SCOPE, WindowControls._PINNED_FLAG_KEY);
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw;
+    return [];
+  }
+
+  static _syncRememberedPinnedCache() {
+    const list = WindowControls._getRememberedPinnedList();
+    const ids = list
+      .map(e => (typeof e === 'string' ? e : e?.id))
+      .filter(id => typeof id === 'string' && id.length);
+    WindowControls._rememberedPinnedIds = new Set(ids);
+  }
+
+  static _isRememberedPinned(app) {
+    if (!game.settings.get('window-controls', 'rememberPinnedWindows')) return false;
+    const id = WindowControls._getAppPersistentId(app);
+    if (!id) return false;
+    return WindowControls._rememberedPinnedIds.has(id);
+  }
+
+  static _getElement(app) {
+    const el = app?.element;
+    if (!el) return null;
+    if (el instanceof HTMLElement) return el;
+    return el?.[0] ?? null;
+  }
+
+  static _get$Element(app) {
+    const el = WindowControls._getElement(app);
+    return el ? $(el) : null;
+  }
+
+  static _bringToFront(app) {
+    if (!app) return;
+    // AppV2: bringToFront is the supported method. AppV1 historically used bringToTop.
+    if (typeof app.bringToFront === 'function') return app.bringToFront();
+    if (typeof app.bringToTop === 'function') return app.bringToTop();
+  }
+
+  static _getTaskbarSetting() {
+    const raw = game.settings.get('window-controls', 'organizedMinimize');
+    // Migrate legacy values to taskbar modes.
+    if (raw === 'persistentTop' || raw === 'persistentBottom' || raw === 'disabled') return raw;
+    if (raw === 'top' || raw === 'topBar') return 'persistentTop';
+    if (raw === 'bottom' || raw === 'bottomBar') return 'persistentBottom';
+    return 'disabled';
+  }
+
+  static _isTaskbarMode(setting) {
+    return setting === 'persistentTop' || setting === 'persistentBottom';
+  }
+
+  static _getTaskbarSection() {
+    return document.getElementById('window-controls-persistent');
+  }
+
+  static _ensureTaskbarSection() {
+    if (WindowControls._getTaskbarSection()) return;
+    document.body.insertAdjacentHTML('beforeend', '<section id="window-controls-persistent"></section>');
+  }
+
+  static _applyTaskbarDockLayout() {
+    const setting = WindowControls._getTaskbarSetting();
+
+    document.body.classList.remove('wc-taskbar-top', 'wc-taskbar-bottom');
+
+    // Keep CSS variable in sync with our expected height.
+    const rootStyle = document.documentElement?.style;
+    if (rootStyle) rootStyle.setProperty('--wc-taskbar-height', '40px');
+
+    if (!WindowControls._isTaskbarMode(setting)) {
+      const existing = WindowControls._getTaskbarSection();
+      if (existing?.parentElement) existing.parentElement.removeChild(existing);
+      // Kick Foundry layout/canvas to recompute sizes.
+      window.dispatchEvent(new Event('resize'));
+      return;
+    }
+
+    WindowControls._ensureTaskbarSection();
+    if (setting === 'persistentTop') document.body.classList.add('wc-taskbar-top');
+    if (setting === 'persistentBottom') document.body.classList.add('wc-taskbar-bottom');
+
+    // Kick Foundry layout/canvas to recompute sizes.
+    window.dispatchEvent(new Event('resize'));
+  }
+
+  static _getTaskbarEntry(app) {
+    const key = WindowControls._getAppKey(app);
+    if (!key) return undefined;
+    return WindowControls._taskbarEntries.get(String(key));
+  }
+
+  static _setTaskbarEntry(app, entry) {
+    const key = WindowControls._getAppKey(app);
+    if (!key) return;
+    WindowControls._taskbarEntries.set(String(key), entry);
+  }
+
+  static _deleteTaskbarEntry(app) {
+    const key = WindowControls._getAppKey(app);
+    if (!key) return;
+    WindowControls._taskbarEntries.delete(String(key));
+  }
+
+  static _isHiddenToTaskbar(app) {
+    const el = WindowControls._getElement(app);
+    if (!el) return false;
+    return el.style.display === 'none' || el.dataset?.wcTaskbarHidden === '1';
+  }
+
+  static _showFromTaskbar(app) {
+    const el = WindowControls._getElement(app);
+    if (!el) return;
+    el.style.display = '';
+    if (el.dataset) delete el.dataset.wcTaskbarHidden;
+    // Maintain our own minimized state when we bypass Foundry's minimize/maximize.
+    if (app?._minimized) app._minimized = false;
+  }
+
+  static _hideToTaskbar(app) {
+    const el = WindowControls._getElement(app);
+    if (!el) return;
+    el.style.display = 'none';
+    if (el.dataset) el.dataset.wcTaskbarHidden = '1';
+    // Maintain our own minimized state when we bypass Foundry's minimize/maximize.
+    app._minimized = true;
+  }
+
+  static _getTaskbarButtonLabel(app) {
+    const title = (app?.title ?? app?.options?.title ?? app?.constructor?.name ?? 'Window');
+    const short = String(title).slice(0, 10);
+
+    const docName = app?.document?.documentName;
+    const ctor = app?.constructor?.name ?? '';
+
+    let icon = 'far fa-window-maximize';
+    if (docName === 'Actor' || ctor.includes('Actor')) icon = 'fas fa-user';
+    else if (docName === 'Item' || ctor.includes('Item')) icon = 'fas fa-sword';
+    else if (docName === 'JournalEntry' || ctor.includes('Journal')) icon = 'fas fa-book-open';
+    else if (docName === 'RollTable' || ctor.includes('RollTable')) icon = 'fas fa-list';
+
+    return { icon, text: short };
+  }
+
+  static _isTopmost(app) {
+    const el = WindowControls._getElement(app);
+    if (!el) return false;
+    const getZ = (node) => {
+      const z = Number(getComputedStyle(node).zIndex);
+      return Number.isFinite(z) ? z : 0;
+    };
+    const myZ = getZ(el);
+    const nodes = Array.from(document.querySelectorAll('.window-app, .app'))
+      .filter(n => n instanceof HTMLElement && n.id !== 'window-controls-persistent' && getComputedStyle(n).display !== 'none');
+    const maxZ = Math.max(0, ...nodes.map(getZ));
+    return myZ >= maxZ;
+  }
+
+  static _createOrUpdateTaskbarButton(app, { pinned } = {}) {
+    WindowControls._ensureTaskbarSection();
+    const section = WindowControls._getTaskbarSection();
+    if (!section) return;
+
+    const key = WindowControls._getAppKey(app);
+    if (!key) return;
+
+    const strKey = String(key);
+    const existingEntry = WindowControls._taskbarEntries.get(strKey) ?? { app };
+    existingEntry.app = app;
+    existingEntry.pinned = pinned ?? existingEntry.pinned ?? false;
+    existingEntry.persistentId = WindowControls._getAppPersistentId(app);
+
+    let btn = existingEntry.button;
+    if (!btn || !(btn instanceof HTMLElement) || !btn.isConnected) {
+      btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'wc-taskbar-btn';
+      btn.dataset.wcAppKey = strKey;
+
+      btn.addEventListener('click', async (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const entry = WindowControls._taskbarEntries.get(strKey);
+        const targetApp = entry?.app;
+        if (!targetApp) return;
+
+        // If this button was previewing, stop preview tracking now.
+        if (entry) {
+          entry._wcPreviewing = false;
+          entry._wcHoveringButton = false;
+          entry._wcHoveringWindow = false;
+          if (entry._wcHoverTimer) {
+            clearTimeout(entry._wcHoverTimer);
+            entry._wcHoverTimer = null;
+          }
+          const el = WindowControls._getElement(targetApp);
+          if (el && el.dataset) delete el.dataset.wcTaskbarPreview;
+        }
+
+        // If hidden/minimized-to-taskbar: restore.
+        if (WindowControls._isHiddenToTaskbar(targetApp) || WindowControls._isMinimized(targetApp)) {
+          await WindowControls._restoreFromTaskbar(targetApp);
+          return;
+        }
+
+        // Visible pinned window: bring-to-front, then if already topmost, minimize-to-taskbar.
+        if (targetApp._pinned === true) {
+          if (WindowControls._isTopmost(targetApp)) {
+            // Avoid Foundry minimize animation/state; hide directly.
+            WindowControls.organizedMinimize(targetApp, WindowControls._getTaskbarSetting());
+          } else {
+            WindowControls._bringToFront(targetApp);
+          }
+        } else {
+          // Unpinned visible window: just bring to top.
+          WindowControls._bringToFront(targetApp);
+        }
+      });
+
+      section.appendChild(btn);
+      existingEntry.button = btn;
+    }
+
+    // Tooltip should show the full window title.
+    const fullTitle = String(app?.title ?? app?.options?.title ?? app?.constructor?.name ?? 'Window');
+    btn.title = fullTitle;
+
+    const { icon, text } = WindowControls._getTaskbarButtonLabel(app);
+    btn.innerHTML = `<i class="${icon}"></i><span class="wc-taskbar-label">${foundry.utils.escapeHTML(text)}</span>`;
+    btn.classList.toggle('pinned', !!existingEntry.pinned);
+
+    WindowControls._ensureHoverPreviewHandlers(existingEntry, app);
+
+    WindowControls._taskbarEntries.set(strKey, existingEntry);
+    WindowControls._sortTaskbarButtons();
+  }
+
+  static _removeTaskbarButton(app) {
+    const key = WindowControls._getAppKey(app);
+    if (!key) return;
+    const entry = WindowControls._taskbarEntries.get(String(key));
+    if (!entry) return;
+    if (entry.button?.parentElement) entry.button.parentElement.removeChild(entry.button);
+    WindowControls._taskbarEntries.delete(String(key));
+    WindowControls._sortTaskbarButtons();
+  }
+
+  static _restoreFromTaskbar(app) {
+    WindowControls._showFromTaskbar(app);
+    const p = (async () => {
+      WindowControls._bringToFront(app);
+      WindowControls.setRestoredStyle(app);
+      // Remove taskbar button only if not pinned.
+      if (app._pinned !== true) WindowControls._removeTaskbarButton(app);
+    })();
+    return p;
+  }
+
+  static _syncPinnedTaskbarButton(app) {
+    if (!WindowControls._isTaskbarMode(WindowControls._getTaskbarSetting())) return;
+    if (app._pinned === true) {
+      WindowControls._createOrUpdateTaskbarButton(app, { pinned: true });
+    } else {
+      // If not pinned: remove the button only when visible.
+      if (!WindowControls._isHiddenToTaskbar(app) && !WindowControls._isMinimized(app)) {
+        WindowControls._removeTaskbarButton(app);
+      } else {
+        // Still hidden: keep the button but remove pinned styling.
+        WindowControls._createOrUpdateTaskbarButton(app, { pinned: false });
+      }
+    }
+  }
+
+  static _getHeaderElement(app, rootElement) {
+    const el = rootElement ?? WindowControls._getElement(app);
+    if (!el) return null;
+    return el.querySelector('.window-header') ?? el.querySelector('header') ?? null;
+  }
+
+  static _getCloseControlElement(app, rootElement) {
+    // Prefer the AppV2 Window API if present.
+    const closeEl = app?.window?.close;
+    if (closeEl instanceof HTMLElement) return closeEl;
+    const header = WindowControls._getHeaderElement(app, rootElement);
+    if (!header) return null;
+    return (
+      header.querySelector('.close') ||
+      header.querySelector('[data-action="close"]') ||
+      header.querySelector('button[aria-label*="Close" i]') ||
+      header.querySelector('a[aria-label*="Close" i]')
+    );
+  }
+
+  static _setCloseControlHidden(app, hidden, rootElement) {
+    const closeEl = WindowControls._getCloseControlElement(app, rootElement);
+    if (!closeEl) return;
+    closeEl.style.display = hidden ? 'none' : '';
+  }
+
+  static _setWindowTitleText(app, text, rootElement) {
+    const titleEl = app?.window?.title;
+    if (titleEl instanceof HTMLElement) {
+      titleEl.textContent = text;
+      return;
+    }
+    const header = WindowControls._getHeaderElement(app, rootElement);
+    if (!header) return;
+    const h = header.querySelector('h1, h2, h3, h4, .window-title');
+    if (h) h.textContent = text;
+  }
+
+  static _ensureInlineControlsV2(app, rootElement) {
+    if (WindowControls._shouldIgnoreApp(app)) return;
+    const el = rootElement ?? WindowControls._getElement(app);
+    if (!el) return;
+
+    const header = WindowControls._getHeaderElement(app, el);
+    if (!header) return;
+
+    // Avoid duplicates on re-render.
+    if (header.querySelector('.window-controls-inline')) return;
+
+    const minimizeSetting = game.settings.get('window-controls', 'minimizeButton');
+    const maximizeSetting = game.settings.get('window-controls', 'maximizeButton');
+    const pinnedSetting = game.settings.get('window-controls', 'pinnedButton');
+    if (minimizeSetting !== 'enabled' && maximizeSetting !== 'enabled' && pinnedSetting !== 'enabled') return;
+
+    const closeControl = WindowControls._getCloseControlElement(app, el);
+    const controls = document.createElement('div');
+    controls.className = 'window-controls-inline';
+
+    const makeControl = ({ cls, icon, titleKey, onClick }) => {
+      // Important: do NOT inherit classes from the close button.
+      // Many Foundry themes implement close via ::before icon rules which would render an extra "x".
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.classList.add('header-control', 'window-controls-inline-btn', cls);
+
+      const title = game.i18n.localize(titleKey);
+      btn.setAttribute('title', title);
+      btn.setAttribute('aria-label', title);
+      btn.innerHTML = `<i class="${icon}"></i>`;
+      btn.addEventListener('click', async (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        await onClick();
+      });
+      return btn;
+    };
+
+    if (minimizeSetting === 'enabled') {
+      controls.appendChild(makeControl({
+        cls: 'minimize',
+        icon: 'far fa-window-minimize',
+        titleKey: 'WindowControls.Minimize',
+        onClick: async () => {
+          if (WindowControls._isMinimized(app)) await app.maximize();
+          else await app.minimize();
+        }
+      }));
+    }
+
+    if (maximizeSetting === 'enabled') {
+      controls.appendChild(makeControl({
+        cls: 'maximize',
+        icon: app._maximized ? 'far fa-window-restore' : 'far fa-window-maximize',
+        titleKey: 'WindowControls.Maximize',
+        onClick: async () => WindowControls.maximizeWindow(app)
+      }));
+    }
+
+    if (pinnedSetting === 'enabled') {
+      controls.appendChild(makeControl({
+        cls: 'pin',
+        icon: 'fas fa-map-pin',
+        titleKey: 'WindowControls.Pin',
+        onClick: async () => {
+          WindowControls.applyPinnedMode(app);
+          WindowControls.applyPinnedMode(Object.values(ui.windows).find(w => w.targetApp?.appId === app.appId));
+        }
+      }));
+    }
+
+    // Insert immediately left of the close control if possible.
+    if (closeControl?.parentElement) closeControl.parentElement.insertBefore(controls, closeControl);
+    else header.appendChild(controls);
+
+    // Sync close visibility if already pinned.
+    if (app._pinned === true) WindowControls._setCloseControlHidden(app, true, el);
+
+    // Auto-apply remembered pin for this window.
+    if (!app._pinned && WindowControls._isRememberedPinned(app)) {
+      WindowControls.applyPinnedMode(app);
+    }
+  }
 
   static getStashedKeys() {
     return Object.keys(WindowControls.minimizedStash).map(w => parseInt(w));
@@ -23,7 +674,7 @@ class WindowControls {
   static minimizeAll() {
     for (const w of Object.values(ui.windows)) {
       const ctr = w.constructor.name;
-      if (w._minimized === true || w._pinned === true || ctr === 'DestinyTracker' || ctr === 'ee')
+      if (WindowControls._isMinimized(w) === true || w._pinned === true || ctr === 'DestinyTracker' || ctr === 'ee')
         continue;
       if ( // Do not minimize Dialogs
         !(ctr.includes('Config') ||
@@ -59,70 +710,91 @@ class WindowControls {
     return Math.max(...WindowControls.getStashedKeys()) >= WindowControls.getCurrentMaxGap();
   }
 
-  static persistPinned(app) {
-    const currentPersisted = game.user.getFlag("window-controls", "persisted-pinned-windows") ?? [];
-    if (app.document?.id) {
-      if (!currentPersisted.find(p => p.docId === app.document.id)) {
-        currentPersisted.push({docId: app.document.id, docName: app.document.documentName, position: app.position});
-        game.user.setFlag("window-controls", "persisted-pinned-windows", currentPersisted);
+  static async persistPinned(app) {
+    const id = WindowControls._getAppPersistentId(app);
+    if (!id) return;
+    const list = WindowControls._getRememberedPinnedList();
+    const exists = list.some(e => (typeof e === 'string' ? e === id : e?.id === id));
+    if (exists) return;
+    list.push({ id, position: app?.position ?? null });
+    await game.user.setFlag(WindowControls._PINNED_FLAG_SCOPE, WindowControls._PINNED_FLAG_KEY, list);
+    WindowControls._syncRememberedPinnedCache();
+  }
+
+  static async unpersistPinned(app) {
+    const id = WindowControls._getAppPersistentId(app);
+    if (!id) return;
+    const list = WindowControls._getRememberedPinnedList();
+    const filtered = list.filter(e => (typeof e === 'string' ? e !== id : e?.id !== id));
+    await game.user.setFlag(WindowControls._PINNED_FLAG_SCOPE, WindowControls._PINNED_FLAG_KEY, filtered);
+    WindowControls._syncRememberedPinnedCache();
+  }
+
+  static _persistRenderMinimizeRetry(app, { position, tries = 0 } = {}) {
+    const maxTries = 10;
+    const delay = 250;
+    setTimeout(async () => {
+      if (!app) return;
+      if (app.rendered) {
+        try {
+          if (WindowControls._isTargetSheet(app)) WindowControls.applyPinnedMode(app);
+          if (position && typeof app.setPosition === 'function') app.setPosition(position);
+          const taskbarSetting = WindowControls._getTaskbarSetting();
+          if (WindowControls._isTaskbarMode(taskbarSetting)) {
+            // Skip Foundry's minimize/maximize; hide directly.
+            WindowControls.organizedMinimize(app, taskbarSetting);
+            WindowControls._syncPinnedTaskbarButton(app);
+          }
+        } catch (e) {
+          console.warn('Window Controls: Failed to initialize remembered pinned window.', e);
+        }
+        return;
       }
-    } else if (app.tabName) {
-      if (!currentPersisted.find(p => p.docId === app.tabName)) {
-        currentPersisted.push({docId: app.tabName, docName: 'SidebarTab', position: app.position});
-        game.user.setFlag("window-controls", "persisted-pinned-windows", currentPersisted);
+
+      if (tries >= maxTries) {
+        console.warn('Window Controls: Gave up restoring a remembered pinned window (too slow to render).');
+        return;
+      }
+      WindowControls._persistRenderMinimizeRetry(app, { position, tries: tries + 1 });
+    }, delay);
+  }
+
+  static async _restoreRememberedPinnedWindows() {
+    if (!game.settings.get('window-controls', 'rememberPinnedWindows')) return;
+    WindowControls._syncRememberedPinnedCache();
+    const list = WindowControls._getRememberedPinnedList();
+
+    for (const entry of list) {
+      const id = typeof entry === 'string' ? entry : entry?.id;
+      const position = typeof entry === 'object' ? entry?.position : null;
+      if (typeof id !== 'string' || !id.length) continue;
+
+      // Ignore any legacy stored non-document ids.
+      if (id.startsWith('SidebarTab.')) continue;
+
+      // Document UUIDs.
+      try {
+        const fromUuid = foundry?.utils?.fromUuid ?? globalThis.fromUuid;
+        if (typeof fromUuid !== 'function') continue;
+        const doc = await fromUuid(id);
+        const sheet = doc?.sheet;
+        if (!sheet || typeof sheet.render !== 'function') continue;
+        sheet.render(true);
+        WindowControls._persistRenderMinimizeRetry(sheet, { position });
+      } catch (e) {
+        console.warn(`Window Controls: Failed restoring pinned window for id ${id}`, e);
       }
     }
-  }
-
-  static unpersistPinned(app) {
-    const filtered = game.user.getFlag("window-controls", "persisted-pinned-windows")?.filter(a => (a.docId !== app.document?.id && a.docId !== app.tabName)) ?? [];
-    game.user.setFlag("window-controls", "persisted-pinned-windows", filtered);
-  }
-
-  static async persistRender(persisted, collection) {
-    if (ui.PDFoundry && game.journal.get(persisted.docId)?.data.flags.pdfoundry) {
-      const pdf = game.journal.get(persisted.docId);
-      ui.PDFoundry.openPDFByName(
-        pdf.name,
-        {entity: pdf}
-      ).then(pf => pf.minimize());
-    } else if (collection.contents) {
-      const appDoc = collection.contents.find(d => d.id === persisted.docId).sheet;
-      appDoc.render(true);
-      WindowControls.persistRenderMinimizeRetry(appDoc, false, persisted.position)
-    } else if (collection.tabs) {
-      const tab = collection.tabs[persisted.docId];
-      tab.renderPopout();
-      WindowControls.persistRenderMinimizeRetry(tab._popout, false, persisted.position)
-    }
-  }
-
-  static persistRenderMinimizeRetry(appDoc, stop, position) {
-    setTimeout(() => {
-      if (appDoc?.rendered) {
-        WindowControls.applyPinnedMode(appDoc);
-        if (appDoc._sourceDummyPanelApp)
-          WindowControls.applyPinnedMode(appDoc._sourceDummyPanelApp);
-        appDoc.setPosition(position);
-        if (!appDoc._minimized)
-          appDoc.minimize();
-        setTimeout(() => WindowControls.setMinimizedStyle(appDoc._sourceDummyPanelApp), 500);
-      } else if (!stop) {
-        console.warn("Window Controls: Too slow to render persisted Windows... Retrying...");
-        WindowControls.persistRenderMinimizeRetry(appDoc, true, position);
-      } else {
-        console.warn("Window Controls: Too slow to render persisted Windows... I give up!");
-        game.user.unsetFlag("window-controls", "persisted-pinned-windows");
-      }
-    }, 1000)
   }
 
   static toggleMovement(app) {
-    const elementJS = app.element[0];
+    const elementJS = WindowControls._getElement(app);
     const stashOverflowed = WindowControls.getOverflowedState();
     if (stashOverflowed) {
       return;
     }
+
+    if (!elementJS) return;
 
     elementJS.addEventListener('pointerdown', function (ev) {
       if (app._minimized)
@@ -132,36 +804,8 @@ class WindowControls {
   }
 
   static positionMinimizeBar() {
-    const setting = game.settings.get('window-controls', 'organizedMinimize');
-    if (!['topBar', 'bottomBar'].includes(setting))
-      return;
-    const rootStyle = document.querySelector(':root').style;
-    const bar = $('#minimized-bar').hide();
-    const barHtml = $(`<div id="minimized-bar" class="app" style="display: none;"></div>`);
-    switch (setting) {
-      case 'topBar': {
-        rootStyle.setProperty('--minibarbot', 'unset');
-        rootStyle.setProperty('--minibartop', (WindowControls.getTopPosition() - 4) + 'px');
-        rootStyle.setProperty('--minibarleft', WindowControls.cssTopBarLeftStart + 'px');
-        if (bar.length === 0)
-          barHtml.appendTo('body');
-        break;
-      }
-      case 'bottomBar': {
-        let hotbarSetting;
-        if (game.modules.get('minimal-ui')?.active)
-          hotbarSetting = game.settings.get('minimal-ui', 'hotbar');
-        if (hotbarSetting === 'hidden' || (hotbarSetting === 'onlygm' && !game.user?.isGM))
-          rootStyle.setProperty('--minibarbot', WindowControls.cssMinimizedBottomBaseline - 65 + 'px');
-        else
-          rootStyle.setProperty('--minibarbot', WindowControls.cssMinimizedBottomBaseline + 'px');
-        rootStyle.setProperty('--minibartop', 'unset');
-        rootStyle.setProperty('--minibarleft', WindowControls.cssBottomBarLeftStart + 'px');
-        if (bar.length === 0)
-          barHtml.appendTo('body');
-        break;
-      }
-    }
+    // Legacy minibar feature removed (taskbar-only minimize).
+    return;
   }
 
   static getTopPosition() {
@@ -185,38 +829,51 @@ class WindowControls {
       let offset;
       if (logoSetting === 'hidden' && sceneNavigationSetting === 'hidden')
         offset = WindowControls.cssMinimizedTopBaseline + 6;
-      else
-        offset = document.querySelector("#navigation").offsetHeight + WindowControls.cssMinimizedTopBaseline + 20;
+      else {
+        const navigation = (
+          document.querySelector('#navigation') ||
+          document.querySelector('#scene-navigation') ||
+          document.querySelector('#ui-top') ||
+          ui?.navigation?.element?.[0] ||
+          ui?.nav?.element?.[0]
+        );
+        const navHeight = navigation?.offsetHeight;
+        offset = (typeof navHeight === 'number' && navHeight > 0)
+          ? navHeight + WindowControls.cssMinimizedTopBaseline + 20
+          : WindowControls.cssMinimizedTopBaseline + 6;
+      }
       return offset;
     }
   }
 
   static getLeftPosition(app) {
+    const appKey = WindowControls._getAppKey(app);
     const minimizedSetting = game.settings.get('window-controls', 'organizedMinimize');
     const minGap = ['top', 'topBar'].includes(minimizedSetting) ? WindowControls.cssTopBarLeftStart + 10 : (minimizedSetting === 'persistentTop' || minimizedSetting === 'persistentBottom' ? WindowControls.cssTopBarPersistentLeftStart + 10 : WindowControls.cssBottomBarLeftStart + 10);
     const jumpGap = WindowControls.cssMinimizedSize + 10;
     const maxGap = WindowControls.getCurrentMaxGap();
     let targetPos;
     for (let i = minGap; i < maxGap + jumpGap; i = i + jumpGap) {
-      if (WindowControls.minimizedStash[i]?.app.appId === app?.appId) {
-        WindowControls.minimizedStash[i].oldPosition = Object.assign({}, app.position);
+      const stashEntry = WindowControls.minimizedStash[i];
+      if (appKey && stashEntry?.appKey === appKey) {
+        stashEntry.oldPosition = Object.assign({}, app.position);
         targetPos = i;
         return targetPos;
-      } else if (!targetPos && !WindowControls.minimizedStash[i]?.app.rendered) {
-        WindowControls.minimizedStash[i] = {app: app, oldPosition: Object.assign({}, app.position)};
+      } else if (!targetPos && !stashEntry?.app?.rendered) {
+        WindowControls.minimizedStash[i] = {app: app, appKey, oldPosition: Object.assign({}, app.position)};
         targetPos = i;
         return targetPos;
       }
     }
-    let appI = app.position.left;
+    let appI = app?.position?.left ?? minGap;
     while (appI in WindowControls.minimizedStash) appI += 20;
-    WindowControls.minimizedStash[appI] = {app: app, oldPosition: Object.assign({}, app.position)};
+    WindowControls.minimizedStash[appI] = {app: app, appKey, oldPosition: Object.assign({}, app.position)};
     return appI;
   }
 
   static setMinimizedPosition(app) {
     const setting = game.settings.get('window-controls', 'organizedMinimize');
-    const alreadyStashedWindow = WindowControls.appInStash(app?.appId);
+    const alreadyStashedWindow = WindowControls.appInStash(WindowControls._getAppKey(app));
     if (!alreadyStashedWindow && WindowControls.getOverflowedState()) return;
     const leftPos = WindowControls.getLeftPosition(app);
     const topPos = WindowControls.getTopPosition();
@@ -225,23 +882,38 @@ class WindowControls {
       top: setting === 'persistentTop' ? WindowControls.getTaskbarTop() : setting === 'persistentBottom' ? WindowControls.getTaskbarBot() : (topPos ?? app.position.top),
       width: WindowControls.cssMinimizedSize
     });
-    app.element.css({'z-index': WindowControls.getOverflowedState() ? 10 : 1});
+
+    // Foundry's minimized state often anchors windows via "bottom" CSS.
+    // Clear the opposing axis so our setPosition top/bottom intent actually applies.
+    const el = WindowControls._getElement(app);
+    if (el) {
+      if (['top', 'topBar', 'persistentTop'].includes(setting)) el.style.bottom = '';
+      if (['bottom', 'bottomBar', 'persistentBottom'].includes(setting)) el.style.top = '';
+    }
+
+    const z = WindowControls.getOverflowedState() ? 10 : 1;
+    const $el = WindowControls._get$Element(app);
+    if ($el) $el.css({'z-index': z});
+    else {
+      if (el) el.style.zIndex = String(z);
+    }
   }
 
   static setRestoredPosition(app) {
-    app.setPosition(WindowControls.appInStash(app?.appId)?.oldPosition ?? app.position);
+    app.setPosition(WindowControls.appInStash(WindowControls._getAppKey(app))?.oldPosition ?? app.position);
   }
 
   static deleteFromStash(app, keys) {
+    const appKey = WindowControls._getAppKey(app);
     let lastDeleted;
     keys.forEach(i => {
       const stash = WindowControls.minimizedStash[i];
-      if (stash?.app && stash.app.appId === app.appId) {
+      if (stash?.app && appKey && stash.appKey === appKey) {
         lastDeleted = i;
         delete WindowControls.minimizedStash[i];
       } else if (stash && lastDeleted) {
         WindowControls.minimizedStash[lastDeleted] = stash;
-        if (stash.app._minimized)
+        if (WindowControls._isMinimized(stash.app))
           stash.app.setPosition({left: lastDeleted});
         lastDeleted = i;
         delete WindowControls.minimizedStash[i];
@@ -250,74 +922,63 @@ class WindowControls {
   }
 
   static appInStash(targetId) {
-    return Object.values(WindowControls.minimizedStash).find(a => a.app?.appId === targetId)
+    if (!targetId) return undefined;
+    return Object.values(WindowControls.minimizedStash).find(a => a?.appKey === targetId)
   }
 
   static refreshMinimizeBar() {
-    const minimized = $(".minimized");
-    const stashSize = WindowControls.getStashedKeys().length;
-    if (minimized.length === 0 || Object.values(WindowControls.minimizedStash).every(w => w.app.rendered === false)) {
-      WindowControls.minimizedStash = {};
-      $("#minimized-bar").hide();
-    } else if (stashSize > 0) {
-      if (stashSize === 1)
-        WindowControls.positionMinimizeBar();
-      const maxPosition = Math.max(
-        ...Object.entries(WindowControls.minimizedStash)
-          .filter(([_, app]) => app.app.rendered && app.app._minimized)
-          .map(([pos, _]) => Number(pos))
-          .concat(0)
-      );
-      const setting = game.settings.get('window-controls', 'organizedMinimize');
-      const rootStyle = document.querySelector(':root').style;
-      if (setting === 'topBar' || setting === 'persistentTop') {
-        rootStyle.setProperty('--minibarw', maxPosition + 40 + 'px');
-      } else
-        rootStyle.setProperty('--minibarw', maxPosition - 90 + 'px');
-      minimized.show();
-      $("#minimized-bar").show();
-    }
+    // Legacy minibar feature removed (taskbar-only minimize).
+    return;
   }
 
   static cleanupMinimizeBar(app) {
-    const keys = WindowControls.getStashedKeys();
-    if (keys.length)
-      WindowControls.deleteFromStash(app, keys);
+    // Legacy minibar feature removed (taskbar-only minimize).
+    return;
   }
 
   static setMinimizedStyle(app) {
-    if (!app?.element) return;
-    app.element.find(".window-header > h4").text(WindowControls.curateTitle(app.title));
-    app.element.find(".minimize").empty();
-    app.element.find(".minimize").append(`<i class="far fa-window-restore"></i>`);
-    app.element.find(".minimize").show();
+    const el = WindowControls._getElement(app);
+    if (!el) return;
+    const $el = $(el);
+    WindowControls._setWindowTitleText(app, WindowControls.curateTitle(app.title), el);
+    const $min = $el.find('.minimize');
+    $min.empty();
+    $min.append(`<i class="far fa-window-restore"></i>`);
+    $min.show();
   }
 
   static setRestoredStyle(app) {
-    app.element.find(".window-header > h4").text(WindowControls.uncurateTitle(app.title));
-    app.element.find(".minimize").empty();
-    app.element.find(".minimize").append(`<i class="far fa-window-minimize"></i>`);
+    const el = WindowControls._getElement(app);
+    if (!el) return;
+    const $el = $(el);
+    WindowControls._setWindowTitleText(app, WindowControls.uncurateTitle(app.title), el);
+    const $min = $el.find('.minimize');
+    $min.empty();
+    $min.append(`<i class="far fa-window-minimize"></i>`);
     if (app._pinned === true) {
-      app.element.find(".entry-image").hide();
-      app.element.find(".entry-text").hide();
-      app.element.find(".close").hide();
+      $el.find(".entry-image").hide();
+      $el.find(".entry-text").hide();
+      WindowControls._setCloseControlHidden(app, true, el);
     }
   }
 
   static applyPinnedMode(app) {
-    if (!app?.element) return;
-    const header = app.element.find(".window-header");
+    if (!WindowControls._isTargetSheet(app)) return;
+    const el = WindowControls._getElement(app);
+    if (!el) return;
+    const $el = $(el);
+    const header = $el.find(".window-header");
     if (!header.hasClass('minimized-pinned')) {
       header.addClass('minimized-pinned');
       app._pinned = true;
       app._closeBkp = app.close;
       if (game.settings.get('window-controls', 'pinnedDoubleTapping') === false) {
         app.close = async function () {
-          if (!this._minimized) await this.minimize();
+          if (!WindowControls._isMinimized(this)) await this.minimize();
         };
       } else {
         app.close = async function () {
-          if (this._minimized)
+          if (WindowControls._isMinimized(this))
             return;
           if (app._pinned_marked) {
             delete app._pinned_marked;
@@ -330,12 +991,11 @@ class WindowControls {
           }
         };
       }
-      header.find(".close").hide();
+      WindowControls._setCloseControlHidden(app, true, el);
       header.find(".entry-image").hide(); // Disallow switching journal modes - it is the safest approach to avoid dealing with close()
       header.find(".entry-text").hide();
-      if (game.settings.get('window-controls', 'rememberPinnedWindows') && app.targetApp === undefined) {
-        WindowControls.persistPinned(app);
-      }
+      if (game.settings.get('window-controls', 'rememberPinnedWindows')) void WindowControls.persistPinned(app);
+      WindowControls._syncPinnedTaskbarButton(app);
     } else if (app._pinned) {
       delete app._pinned;
       header.removeClass('minimized-pinned');
@@ -349,10 +1009,73 @@ class WindowControls {
       }, 200)
       header.find(".entry-image").show();
       header.find(".entry-text").show();
-      header.find(".close").show();
-      if (game.settings.get('window-controls', 'rememberPinnedWindows') && app.targetApp === undefined)
-        WindowControls.unpersistPinned(app);
+      WindowControls._setCloseControlHidden(app, false, el);
+      if (game.settings.get('window-controls', 'rememberPinnedWindows')) void WindowControls.unpersistPinned(app);
+      WindowControls._syncPinnedTaskbarButton(app);
     }
+  }
+
+  static _shouldIgnoreApp(app) {
+    if (!app) return true;
+    if (!WindowControls._isTargetSheet(app)) return true;
+    return app.id === 'tokenizer-control' || app.constructor?.name === 'QuestTracker' || app.constructor?.name === 'ee';
+  }
+
+  static _injectHeaderControlsV1(app, buttons) {
+    if (WindowControls._shouldIgnoreApp(app)) return;
+    const close = buttons.find(b => b.class === 'close');
+    if (close) close.label = '';
+
+    const newButtons = [];
+
+    const minimizeSetting = game.settings.get('window-controls', 'minimizeButton');
+    if (minimizeSetting === 'enabled') {
+      newButtons.push({
+        label: "",
+        class: "minimize",
+        icon: "far fa-window-minimize",
+        onclick: function () {
+          if (WindowControls._isMinimized(this)) this.maximize(true);
+          else {
+            this.minimize();
+            const _bkpMinimize = this.minimize;
+            this.minimize = () => {};
+            setTimeout(() => { this.minimize = _bkpMinimize; }, 200);
+          }
+        }.bind(app)
+      });
+    }
+
+    const maximizeSetting = game.settings.get('window-controls', 'maximizeButton');
+    if (maximizeSetting === 'enabled' && app.options?.resizable) {
+      newButtons.push({
+        label: "",
+        class: "maximize",
+        icon: app._maximized ? "far fa-window-restore" : "far fa-window-maximize",
+        onclick: () => WindowControls.maximizeWindow(app)
+      });
+    }
+
+    const pinnedSetting = game.settings.get('window-controls', 'pinnedButton');
+    if (pinnedSetting === 'enabled') {
+      newButtons.push({
+        label: "",
+        class: "pin",
+        icon: "fas fa-map-pin",
+        onclick: () => {
+          WindowControls.applyPinnedMode(app);
+          WindowControls.applyPinnedMode(Object.values(ui.windows).find(w => w.targetApp?.appId === app.appId));
+        }
+      });
+    }
+
+    buttons.unshift(...newButtons);
+  }
+
+  static _injectHeaderControlsV2(app, controls) {
+    // Intentionally do not add these controls to the AppV2 hamburger menu.
+    // We render inline window buttons (left of close) in the `renderApplicationV2` hook.
+    return;
   }
 
   static reapplyMaximize(app, h, w) {
@@ -388,79 +1111,36 @@ class WindowControls {
   }
 
   static async renderDummyPanelApp(app) {
-    if (game.modules.get("gm-screen")?.active && app.cellId?.includes("gm-screen"))
-      return;
-    if (WindowControls.getOverflowedState()) return;
-    const matchingWindow = Object.values(ui.windows).find(w => w.targetApp?.id === app.id);
-    // Update any name changes and prevent from opening new tabs
-    if (matchingWindow) {
-      matchingWindow.options.title = WindowControls.curateTitle(app.title);
-      matchingWindow.render();
-      return;
-    }
-    const taskbarApp = new WindowControlsPersistentDummy(app);
-    app._sourceDummyPanelApp = taskbarApp;
-    await taskbarApp._render(true);
-    WindowControls.toggleMovement(taskbarApp);
-    await taskbarApp.minimize();
-    WindowControls.setMinimizedPosition(taskbarApp);
-    WindowControls.setMinimizedStyle(taskbarApp);
-    taskbarApp.element
-      .find(".fa-window-restore")
-      .removeClass('fa-window-restore')
-      .addClass('fa-window-minimize');
-    taskbarApp.element
-      .find("header")
-      .removeClass("draggable");
-    if (game.modules.get('minimal-ui')?.active) {
-      taskbarApp.element.css('background-color', game.settings.get('minimal-ui', 'shadowColor'));
-    } else {
-      taskbarApp.element.css('background-color', '#ff640080');
-    }
-    taskbarApp.element.find('header').click(function () {
-      if (taskbarApp.targetApp._minimized) {
-        taskbarApp.targetApp.maximize();
-        WindowControls.setRestoredStyle(taskbarApp);
-      }
-      taskbarApp.targetApp.bringToTop();
-    })
-    taskbarApp.element.css('visibility', 'visible')
+    // Legacy persistent dummy windows removed (taskbar-only minimize).
+    return;
   }
 
   static organizedMinimize(app, settings) {
-    const barEnabled = ['topBar', 'bottomBar'].includes(settings);
-    if (barEnabled)
-      WindowControls.toggleMovement(app);
-    WindowControls.setMinimizedPosition(app);
+    if (!WindowControls._isTaskbarMode(settings)) return;
+    if (WindowControls._shouldIgnoreApp(app)) return;
+
+    WindowControls._createOrUpdateTaskbarButton(app, { pinned: app._pinned === true });
     WindowControls.setMinimizedStyle(app);
-    if (barEnabled)
-      WindowControls.refreshMinimizeBar();
+    WindowControls._hideToTaskbar(app);
   }
 
   static organizedRestore(app, settings) {
-    if (this._minimized) {
-      if (['bottom', 'bottomBar'].includes(settings))
-        this.setPosition({top: 0});
-      this.element.css('visibility', 'hidden');
+    if (!WindowControls._isTaskbarMode(settings)) return;
+    if (WindowControls._shouldIgnoreApp(app)) return;
+
+    WindowControls._showFromTaskbar(app);
+    WindowControls.setRestoredStyle(app);
+    if (app._pinned !== true) {
+      WindowControls._removeTaskbarButton(app);
+    } else {
+      WindowControls._createOrUpdateTaskbarButton(app, { pinned: app._pinned === true });
     }
-    const barEnabled = ['topBar', 'bottomBar'].includes(settings);
-    if (barEnabled)
-      WindowControls.toggleMovement(app);
-    WindowControls.setRestoredPosition(app);
-    if (barEnabled)
-      WindowControls.refreshMinimizeBar();
   }
 
   static organizedClose(app, settings) {
-    if (this._minimized) {
-      this.element.hide();
-      if (['bottom', 'bottomBar'].includes(settings))
-        this.setPosition({top: 0});
-      // If minimized, remember the maximized state position
-      WindowControls.setRestoredPosition(app);
-      // ToDo: For some reason, setPosition() does not restore width at this point. Investigate.
-      app.sheetWidth = app.constructor.defaultOptions.width;
-    }
+    if (!WindowControls._isTaskbarMode(settings)) return;
+    WindowControls._removeTaskbarButton(app);
+    WindowControls._showFromTaskbar(app);
   }
 
   static initSettings() {
@@ -471,15 +1151,11 @@ class WindowControls {
       config: true,
       type: String,
       choices: {
-        "top": game.i18n.localize("WindowControls.OrganizedMinimizeTop"),
-        "bottom": game.i18n.localize("WindowControls.OrganizedMinimizeBottom"),
-        "topBar": game.i18n.localize("WindowControls.OrganizedMinimizeTopBar"),
-        "bottomBar": game.i18n.localize("WindowControls.OrganizedMinimizeBottomBar"),
         "persistentTop": game.i18n.localize("WindowControls.OrganizedPersistentTop"),
         "persistentBottom": game.i18n.localize("WindowControls.OrganizedPersistentBottom"),
         "disabled": game.i18n.localize("WindowControls.Disabled")
       },
-      default: "topBar",
+      default: "persistentTop",
       onChange: WindowControls.debouncedReload
     });
     game.settings.register('window-controls', 'minimizeButton', {
@@ -546,7 +1222,8 @@ class WindowControls {
       type: Boolean,
       default: false,
       onChange: () => {
-        game.user.unsetFlag("window-controls", "persisted-pinned-windows")
+        game.user.unsetFlag(WindowControls._PINNED_FLAG_SCOPE, WindowControls._PINNED_FLAG_KEY);
+        WindowControls._rememberedPinnedIds = new Set();
       }
     });
     game.settings.register('window-controls', 'taskbarColor', {
@@ -561,184 +1238,129 @@ class WindowControls {
         rootStyle.setProperty('--taskbarcolor', newValue);
       }
     });
+
   }
 
   static initHooks() {
 
+    Hooks.on('getApplicationV1HeaderButtons', (app, buttons) => {
+      WindowControls._injectHeaderControlsV1(app, buttons);
+    });
+
+    Hooks.on('getHeaderControlsApplicationV2', (app, controls) => {
+      WindowControls._injectHeaderControlsV2(app, controls);
+    });
+
+    Hooks.on('renderApplicationV2', (app, element) => {
+      WindowControls._ensureInlineControlsV2(app, element);
+
+      // Enforce single open instance per persisted Document UUID.
+      void WindowControls._enforceSingleInstanceByPersistentId(app);
+
+      // Safety: don't permanently hide windows across refresh unless we know why.
+      const key = WindowControls._getAppKey(app);
+      if (element?.style?.display === 'none' && (!key || !WindowControls._taskbarEntries.has(String(key)))) {
+        element.style.display = '';
+      }
+
+      // Auto-apply remembered pin (for windows opened later).
+      if (!app._pinned && WindowControls._isRememberedPinned(app)) WindowControls.applyPinnedMode(app);
+    });
+
+    Hooks.on('renderApplicationV1', (app, html) => {
+      const el = html?.[0];
+      if (!(el instanceof HTMLElement)) return;
+
+      // Enforce single open instance per persisted Document UUID.
+      void WindowControls._enforceSingleInstanceByPersistentId(app);
+
+      const key = WindowControls._getAppKey(app);
+      if (el.style.display === 'none' && (!key || !WindowControls._taskbarEntries.has(String(key)))) {
+        el.style.display = '';
+      }
+
+      if (!app._pinned && WindowControls._isRememberedPinned(app)) WindowControls.applyPinnedMode(app);
+    });
+
     Hooks.once('ready', async function () {
 
-      const settingOrganized = game.settings.get('window-controls', 'organizedMinimize');
+      // Migrate legacy Organized Minimize values to taskbar modes.
+      const current = game.settings.get('window-controls', 'organizedMinimize');
+      const migrated = WindowControls._getTaskbarSetting();
+      if (current !== migrated) {
+        await game.settings.set('window-controls', 'organizedMinimize', migrated);
+        return;
+      }
 
-      if (settingOrganized === 'persistentTop' || settingOrganized === 'persistentBottom') {
-        libWrapper.register('window-controls', 'Application.prototype.minimize', function (wrapped, ...args) {
-          if (!this.element?.length || this.id === 'tokenizer-control') return wrapped(...args);
-          const alreadyPersistedWindow = Object.values(ui.windows).find(w => w.targetApp?.appId === this.appId);
-          if (alreadyPersistedWindow) {
-            alreadyPersistedWindow.element
-              .find(".fa-window-minimize")
-              .removeClass('fa-window-minimize')
-              .addClass('fa-window-restore');
-            alreadyPersistedWindow.element.css('background-color', '');
-            this.element.css('visibility', 'hidden');
-            return wrapped(...args);
-          } else {
-            return wrapped(...args).then(() => {
-              WindowControls.organizedMinimize(this, settingOrganized);
-            })
-          }
-        }, 'WRAPPER');
-        libWrapper.register('window-controls', 'Application.prototype.maximize', function (wrapped, ...args) {
-          if (this._sourceDummyPanelApp || this.id === 'tokenizer-control') {
-            return wrapped(...args).then(() => {
-              if (!this.element?.length) return;
-              WindowControls.setRestoredStyle(this);
-              this.element.css('visibility', '');
-            })
-          } else {
-            if (!this.element?.length) return wrapped(...args);
-            WindowControls.organizedRestore(this, settingOrganized);
-            return wrapped(...args).then(() => {
-              WindowControls.setRestoredStyle(this);
-              this.element.css('visibility', '');
-            });
-          }
-        }, 'WRAPPER');
-        libWrapper.register('window-controls', 'Application.prototype.close', function (wrapped, ...args) {
-          if (!this.element?.length || this.id === 'tokenizer-control') return wrapped(...args);
-          if (this._minimized && !this._sourceDummyPanelApp) {
-            WindowControls.organizedClose(this, settingOrganized);
-          }
-          return wrapped(...args).then(() => {
-            WindowControls.refreshMinimizeBar();
-          });
-        }, 'WRAPPER');
-      } else if (settingOrganized !== 'disabled') {
-        libWrapper.register('window-controls', 'Application.prototype.minimize', function (wrapped, ...args) {
-          return wrapped(...args).then(() => {
-            if (!this.element?.length) return;
-            WindowControls.organizedMinimize(this, settingOrganized);
-            const stashOverflowed = WindowControls.getOverflowedState();
-            if (settingOrganized.includes('Bar') && (!stashOverflowed || WindowControls.appInStash(this.appId)))
-              this.element.find("header").removeClass("draggable");
-          })
-        }, 'WRAPPER');
+      const settingOrganized = migrated;
 
-        libWrapper.register('window-controls', 'Application.prototype.maximize', function (wrapped, ...args) {
-          if (!this.element?.length || !this._minimized) return wrapped(...args);
+      const wrapAppV1 = (method, fn) => {
+        return WindowControls._wrapMethod({
+          target: Application.prototype,
+          method,
+          wrapper: fn,
+          name: 'Application.prototype'
+        });
+      };
+
+      const wrapAppV2 = (method, fn) => {
+        const proto = foundry?.applications?.api?.ApplicationV2?.prototype;
+        if (!proto) return;
+        return WindowControls._wrapMethod({
+          target: proto,
+          method,
+          wrapper: fn,
+          name: 'ApplicationV2.prototype'
+        });
+      };
+
+      if (WindowControls._isTaskbarMode(settingOrganized)) {
+        wrapAppV1('minimize', function (wrapped, ...args) {
+          if (WindowControls._shouldIgnoreApp(this)) return wrapped(...args);
+          WindowControls.organizedMinimize(this, settingOrganized);
+          return Promise.resolve();
+        });
+
+        wrapAppV1('maximize', function (wrapped, ...args) {
+          if (WindowControls._shouldIgnoreApp(this)) return wrapped(...args);
           WindowControls.organizedRestore(this, settingOrganized);
-          return wrapped(...args).then(() => {
-            WindowControls.setRestoredStyle(this);
-            this.element.css('visibility', '');
-            if (settingOrganized.includes('Bar'))
-              this.element.find("header").addClass("draggable");
-          });
-        }, 'WRAPPER');
+          return Promise.resolve();
+        });
 
-        libWrapper.register('window-controls', 'Application.prototype.close', function (wrapped, ...args) {
-          if (!this.element?.length) return wrapped(...args);
+        wrapAppV1('close', function (wrapped, ...args) {
           WindowControls.organizedClose(this, settingOrganized);
           return wrapped(...args).then(() => {
-            WindowControls.refreshMinimizeBar();
+            WindowControls._removeTaskbarButton(this);
           });
-        }, 'WRAPPER');
+        });
       }
 
-      libWrapper.register('window-controls', 'Application.prototype._getHeaderButtons', function (wrapped, ...args) {
-        let result = wrapped(...args);
-        if (this.constructor.name === 'QuestTracker' || (game.modules.get('one-journal')?.active && this.constructor.name === 'JournalSheet') || this.constructor.name === 'ee') // yes, ee is Simple Calendar
-          return result;
-        const close = result.find(b => b.class === 'close');
-        close.label = '';
-        const newButtons = [];
-        const minimizeSetting = game.settings.get('window-controls', 'minimizeButton');
-        // Exception for Forien Quest Log - Is there any way of identifying such kind of windows?
-        if (minimizeSetting === 'enabled') {
-          const minimizeButton = {
-            label: "",
-            class: "minimize",
-            icon: "far fa-window-minimize",
-            onclick: function () {
-              if (this._minimized)
-                this.maximize(true); // 'clicked' hack for V11 - to not minimize dummy windows on render
-              else {
-                this.minimize();
-                //* Dirty hack to prevent "double minimize" after rapidly double-clicking on the minimize button
-                var _bkpMinimize = this.minimize;
-                this.minimize = () => {};
-                setTimeout(() => {
-                  this.minimize = _bkpMinimize;
-                }, 200)
-              }
-            }.bind(this)
-          };
-          newButtons.push(minimizeButton)
-        }
-        const maximizeSetting = game.settings.get('window-controls', 'maximizeButton');
-        if (maximizeSetting === 'enabled' && this.options.resizable) {
-          const maximizeButton = {
-            label: "",
-            class: "maximize",
-            icon: this._maximized ? "far fa-window-restore" : "far fa-window-maximize",
-            onclick: () => {
-              WindowControls.maximizeWindow(this)
-            }
-          }
-          newButtons.push(maximizeButton)
-        }
-        const pinnedSetting = game.settings.get('window-controls', 'pinnedButton');
-        if (pinnedSetting === 'enabled') {
-          const pinButton = {
-            label: "",
-            class: "pin",
-            icon: "fas fa-map-pin",
-            onclick: () => {
-              WindowControls.applyPinnedMode(this);
-              WindowControls.applyPinnedMode(
-                Object.values(ui.windows).find(w => w.targetApp?.appId === this.appId)
-              );
-            }
-          }
-          newButtons.push(pinButton)
-        }
-        return newButtons.concat(result)
-      }, 'WRAPPER');
+      // AppV2 windows require wrapping their lifecycle methods separately.
+      if (WindowControls._isTaskbarMode(settingOrganized)) {
+        wrapAppV2('minimize', async function (wrapped, ...args) {
+          if (WindowControls._shouldIgnoreApp(this)) return await wrapped(...args);
+          WindowControls.organizedMinimize(this, settingOrganized);
+          return;
+        });
+
+        wrapAppV2('maximize', async function (wrapped, ...args) {
+          if (WindowControls._shouldIgnoreApp(this)) return await wrapped(...args);
+          WindowControls.organizedRestore(this, settingOrganized);
+          return this;
+        });
+
+        wrapAppV2('close', async function (wrapped, ...args) {
+          WindowControls.organizedClose(this, settingOrganized);
+          await wrapped(...args);
+          WindowControls._removeTaskbarButton(this);
+        });
+      }
 
       if (game.settings.get('window-controls', 'rememberPinnedWindows')) {
-        try {
-          game.user.getFlag("window-controls", "persisted-pinned-windows")?.forEach(persisted => {
-            switch (persisted.docName) {
-              case "Actor": {
-                WindowControls.persistRender(persisted, game.actors);
-                break
-              }
-              case "Item": {
-                WindowControls.persistRender(persisted, game.items);
-                break
-              }
-              case "JournalEntry": {
-                WindowControls.persistRender(persisted, game.journal);
-                break
-              }
-              case "RollTable": {
-                WindowControls.persistRender(persisted, game.tables);
-                break
-              }
-              case "SidebarTab": {
-                WindowControls.persistRender(persisted, ui.sidebar);
-                break
-              }
-            }
-          })
-        } catch (error) {
-          console.warn("Window Controls: Failed to load persisted pinned windows.\n" + error);
-          game.user.unsetFlag("window-controls", "persisted-pinned-windows");
-        }
+        await WindowControls._restoreRememberedPinnedWindows();
       }
 
-      Hooks.on('PopOut:popout', function (app) {
-        app._sourceDummyPanelApp?.justClose();
-        WindowControls.refreshMinimizeBar();
-      });
+      // No-op: old persistent dummy windows are no longer used.
 
       if (game.settings.get('window-controls', 'clickOutsideMinimize')) {
         $("#board").click(() => {
@@ -751,19 +1373,23 @@ class WindowControls {
     });
 
     Hooks.on('closeSidebarTab', function (app) {
-      WindowControls.cleanupMinimizeBar(app);
+      WindowControls._removeTaskbarButton(app);
+      WindowControls._showFromTaskbar(app);
     });
 
     Hooks.on('closeApplication', function (app) {
-      WindowControls.cleanupMinimizeBar(app);
+      WindowControls._removeTaskbarButton(app);
+      WindowControls._showFromTaskbar(app);
     });
 
     Hooks.on('closeItemSheet', function (app) {
-      WindowControls.cleanupMinimizeBar(app);
+      WindowControls._removeTaskbarButton(app);
+      WindowControls._showFromTaskbar(app);
     });
 
     Hooks.on('closeActorSheet', function (app) {
-      WindowControls.cleanupMinimizeBar(app);
+      WindowControls._removeTaskbarButton(app);
+      WindowControls._showFromTaskbar(app);
     });
 
   }
@@ -771,105 +1397,21 @@ class WindowControls {
 }
 
 Hooks.once('setup', () => {
-  const settings = game.settings.get('window-controls', 'organizedMinimize');
-  if (settings === 'persistentTop') {
-    const rootStyle = document.querySelector(':root').style;
-    const top = 4;
-    const margin = top * 10;
-    const dedHeight = 100 - top;
-    rootStyle.setProperty('--minimizedpos', 'fixed');
-    rootStyle.setProperty('--miniminh', `65vh`);
-    rootStyle.setProperty('--minimaxh', `85vh`);
-    rootStyle.setProperty('--minisidebaradj', `calc(100vh - ${10 + margin}px)`);
-    rootStyle.setProperty('--taskbarcolor', game.settings.get('window-controls', 'taskbarColor'));
-    const nonBackBody = $("body:not(.background)");
-    nonBackBody.css('top', `${margin}px`);
-    nonBackBody.css('height', `${dedHeight}%`);
-    $("body").append('<section id="window-controls-persistent"></section>');
-    $("#window-controls-persistent").css('top', '-40px');
-    $("#window-controls-persistent").css('height', '40px');
-    libWrapper.register('window-controls', 'Application.prototype.setPosition', function (wrapped, ...args) {
-      const expectedPosition = wrapped(...args);
-      if (this.constructor.name !== 'WindowControlsPersistentDummy') {
-        if (!expectedPosition || !this.element.length)
-          return expectedPosition;
-        const el = this.element[0];
-        const marginMaxValue = window.innerHeight - el.offsetHeight - margin;
-        if (expectedPosition.top >= marginMaxValue) {
-          el.style.top = marginMaxValue+'px';
-          expectedPosition.top = marginMaxValue;
-        }
-        const maxHeight = $("#board").height() - 42;
-        if (expectedPosition.height > maxHeight) {
-          el.style.height = maxHeight+'px';
-          expectedPosition.height = maxHeight;
-        }
-      }
-      return expectedPosition;
-    }, 'WRAPPER');
-  } else if (settings === 'persistentBottom') {
-    const rootStyle = document.querySelector(':root').style;
-    const top = -4;
-    const margin = top * 10;
-    const dedHeight = 100 + top;
-    rootStyle.setProperty('--minimizedpos', 'fixed');
-    rootStyle.setProperty('--miniminh', `65vh`);
-    rootStyle.setProperty('--minimaxh', `85vh`);
-    rootStyle.setProperty('--minisidebaradj', `calc(100vh - ${8 - margin}px)`);
-    rootStyle.setProperty('--taskbarcolor', game.settings.get('window-controls', 'taskbarColor'));
-    const nonBackBody = $("body:not(.background)");
-    nonBackBody.css('top', `${margin}px`);
-    nonBackBody.css('padding-top', `${-margin}px`);
-    $("body").append('<section id="window-controls-persistent"></section>');
-    $("#window-controls-persistent").css('bottom', '-40px');
-    $("#window-controls-persistent").css('height', '40px');
-    libWrapper.register('window-controls', 'Application.prototype.setPosition', function (wrapped, ...args) {
-      const expectedPosition = wrapped(...args);
-      if (this.constructor.name === 'WindowControlsPersistentDummy') {
-        setTimeout(() => {
-          const botPos = WindowControls.getTaskbarBot();
-          if (this.position.top != botPos)
-            this.setPosition({top: botPos});
-        }, 500);
-      } else {
-        if (!expectedPosition || !this.element.length)
-          return expectedPosition;
-        const el = this.element[0];
-        const marginMinValue = 42;
-        if (expectedPosition.top <= marginMinValue) {
-          el.style.top = marginMinValue+'px';
-          expectedPosition.top = marginMinValue;
-        }
-        const maxHeight = $("#board").height() - marginMinValue;
-        if (expectedPosition.height > maxHeight) {
-          el.style.height = maxHeight+'px';
-          expectedPosition.height = maxHeight;
-        }
-      }
-      return expectedPosition;
-    }, 'WRAPPER');
-  }
+  // Legacy persistent taskbar layout adjustments removed.
+  // Taskbar is now a standalone section with taskbar buttons; windows remain in their normal layer.
 })
 
 Hooks.once('init', () => {
-  if (!game.modules.get('lib-wrapper')?.active) {
-    WindowControls.noLibWrapper = true;
-  }
   if (game.modules.get('minimize-button')?.active) {
     WindowControls.externalMinimize = true;
   }
 
-  if (!(WindowControls.noLibWrapper || WindowControls.externalMinimize)) {
-    WindowControls.initSettings();
-    WindowControls.initHooks();
-  }
+  if (WindowControls.externalMinimize) return;
+  WindowControls.initSettings();
+  WindowControls.initHooks();
 });
 
 Hooks.once('ready', () => {
-
-  if (WindowControls.noLibWrapper && game.user.isGM)
-    ui.notifications.error("Window Controls: Disabled Minimize Feature because 'lib-wrapper' module is not active.");
-
   if (WindowControls.externalMinimize && game.user.isGM)
     ui.notifications.error("Window Controls: Disabled Minimize Feature because 'Minimize Button' module is active and is not compatible.");
 
@@ -882,140 +1424,8 @@ Hooks.once('ready', () => {
     rootStyle.setProperty('--wcbordercolor', '#ff71003b');
   }
 
-  const settingOrganized = game.settings.get('window-controls', 'organizedMinimize');
-  if (settingOrganized === 'persistentTop' || settingOrganized === 'persistentBottom') {
-    Hooks.on('renderSidebarTab', function (app) {
-      if (app._original) // Avoids launching ghost applications on internal hooks
-        WindowControls.renderDummyPanelApp(app);
-    });
-    Hooks.on('renderCompendium', function (app) {
-      WindowControls.renderDummyPanelApp(app);
-    });
-    Hooks.on('renderJournalSheet', function (app) {
-      if (!(game.modules.get('one-journal')?.active || app.enhancedjournal))
-        WindowControls.renderDummyPanelApp(app);
-    });
-    Hooks.on('renderRollTableConfig', function (app) {
-      WindowControls.renderDummyPanelApp(app);
-    });
-    Hooks.on('renderActorSheet', function (app) {
-      WindowControls.renderDummyPanelApp(app);
-    });
-    Hooks.on('renderItemSheet', function (app) {
-      WindowControls.renderDummyPanelApp(app);
-    });
-    Hooks.on('activateControls', function(app) {
-      if (app.constructor.name === 'EnhancedJournal')
-        WindowControls.renderDummyPanelApp(app);
-    });
-    Hooks.on('renderInlineViewer', function(app) { // Inline Web Viewer
-      WindowControls.renderDummyPanelApp(app);
-    });
-    Hooks.on('renderee', function(app) { // yes, ee is Simple Calendar
-      WindowControls.renderDummyPanelApp(app);
-    });
-    Hooks.on('renderQuestLog', function(app) { // Quest Log
-      WindowControls.renderDummyPanelApp(app);
-    });
-    Hooks.on('renderQuestPreview', function(app) { // Quest Log
-      WindowControls.renderDummyPanelApp(app);
-    });
-    Hooks.on('renderSoundBoardApplication', function(app) { // Soundboard
-      WindowControls.renderDummyPanelApp(app);
-    });
-    Hooks.on('renderStaticViewer', function(app) { // PDFoundry
-      WindowControls.renderDummyPanelApp(app);
-    });
-    Hooks.on('renderFillableViewer', function(app) { // PDFoundry
-      WindowControls.renderDummyPanelApp(app);
-    });
-
-    // ugly, but works. correct the offsets on drop, and camera view
-    if (settingOrganized === 'persistentTop') {
-      Hooks.on('dropCanvasData', function(canvas, data) {
-        data.y = data.y -= 40;
-      });
-      Hooks.on('renderCameraViews', function() {
-        $("#camera-views").css("top", "0px");
-        $("div#camera-views.camera-position-left, div#camera-views.camera-position-right").css("min-height", "96.5vh");
-      })
-    } else {
-      Hooks.on('dropCanvasData', function(canvas, data) {
-        data.y = data.y += 40;
-      });
-      Hooks.on('renderCameraViews', function() {
-        $("#camera-views").css("top", "0px");
-        $("div#camera-views.camera-position-left, div#camera-views.camera-position-right").css("min-height", "96.5vh");
-      })
-    }
-
-  }
-
+  // Ensure taskbar section exists in taskbar mode.
+  WindowControls._applyTaskbarDockLayout();
 
 
 })
-
-class WindowControlsPersistentDummy extends Application {
-  constructor(targetApp) {
-    super({
-      title: targetApp.title,
-      width: 0,
-      height: 0,
-      minimizable: true,
-      id: `dummy-${WindowControls.curateId(targetApp.title)}-${targetApp.appId}`
-    });
-    this.targetApp = targetApp;
-    const oldClose = this.targetApp.close;
-    const thisMagic = this;
-    this.targetApp.close = async function () {
-      await thisMagic.justClose();
-      await oldClose.apply(this);
-    }
-  }
-
-  _injectHTML(html) {
-    $('#window-controls-persistent').append(html);
-    this._element = html;
-    html.hide().fadeIn(200);
-  }
-
-  static get defaultOptions() {
-    return foundry.utils.mergeObject(Dialog.defaultOptions, {
-      classes: ['hidden-placeholder'],
-      resizable: false
-    });
-  }
-
-  async maximize(clicked) {
-    if (this.targetApp._minimized) {
-      await this.targetApp.maximize();
-      this.element
-        .find(".fa-window-restore")
-        .removeClass('fa-window-restore')
-        .addClass('fa-window-minimize');
-      if (game.modules.get('minimal-ui')?.active) {
-        this.element.css('background-color', game.settings.get('minimal-ui', 'shadowColor'));
-      } else {
-        this.element.css('background-color', '#ff640080');
-      };
-      this.targetApp.bringToTop();
-    } else if (clicked) {  // Hack for V11 - to not minimize dummy windows on render
-      await this.targetApp.minimize();
-      this.element
-        .find(".fa-window-minimize")
-        .removeClass('fa-window-minimize')
-        .addClass('fa-window-restore');
-      return
-    }
-  }
-
-  async justClose() {
-    await super.close();
-    WindowControls.refreshMinimizeBar()
-  }
-
-  async close() {
-    await this.targetApp.close();
-    await super.close();
-  }
-}

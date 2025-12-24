@@ -1,0 +1,134 @@
+name: Publish Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Module version (e.g. 1.1.0)"
+        required: true
+        type: string
+      prerelease:
+        description: "Mark as pre-release?"
+        required: false
+        default: false
+        type: boolean
+      draft:
+        description: "Create as draft?"
+        required: false
+        default: false
+        type: boolean
+      make_latest:
+        description: "Make this the 'latest' release? (true | false | legacy)"
+        required: false
+        default: "true"
+        type: choice
+        options: [ "true", "false", "legacy" ]
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Show context
+        run: |
+          echo "GITHUB_REPOSITORY=${GITHUB_REPOSITORY}"
+          echo "github.ref=${{ github.ref }}"
+          echo "github.ref_name=${{ github.ref_name }}"
+          echo "github.ref_type=${{ github.ref_type }}"
+          echo "inputs.version=${{ inputs.version }}"
+
+      - name: Ensure jq & zip are available
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq zip
+
+      - name: Validate module.json presence
+        run: |
+          test -f module.json || (echo "module.json not found at repo root." && exit 1)
+
+      - name: Rewrite module.json (version, manifest, download)
+        shell: bash
+        run: |
+          set -euo pipefail
+          REPO="${GITHUB_REPOSITORY}"
+          VERSION="${{ inputs.version }}"
+          MODULE_ID=$(jq -r '.id' module.json)
+
+          MANIFEST_URL="https://github.com/${REPO}/releases/latest/download/module.json"
+          DOWNLOAD_URL="https://github.com/${REPO}/releases/latest/download/${MODULE_ID}.zip"
+
+          cp module.json module.json.bak
+
+          jq --arg v "$VERSION" \
+             --arg manifest "$MANIFEST_URL" \
+             --arg download "$DOWNLOAD_URL" \
+             '
+             .version = $v
+             | .manifest = $manifest
+             | .download = $download
+             ' module.json > module.json.tmp
+
+          mv module.json.tmp module.json
+
+          echo "Updated module.json to version ${VERSION}:"
+          cat module.json
+
+      - name: Commit updated module.json to main (if on main)
+        if: ${{ endsWith(github.ref, '/main') }}
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add module.json
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "Release v${{ inputs.version }}: update module.json"
+            git push origin HEAD:main
+          fi
+
+      - name: Build ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          MODULE_ID=$(jq -r '.id' module.json)
+          ZIPNAME="${MODULE_ID}.zip"
+          rm -f "$ZIPNAME"
+          # Create a clean ZIP with module files at the root.
+          zip -r "$ZIPNAME" . \
+            -x ".git/*" \
+               ".github/*" \
+               ".gitignore" \
+               "docs/*" \
+               ".DS_Store"
+          [ -f "$ZIPNAME" ] || (echo "ZIP was not produced." && exit 1)
+          echo "ZIP contents:"
+          unzip -l "$ZIPNAME"
+
+      - name: Verify release assets exist
+        run: |
+          MODULE_ID=$(jq -r '.id' module.json)
+          test -f "${MODULE_ID}.zip" || (echo "${MODULE_ID}.zip missing"; exit 1)
+          test -f module.json || (echo "module.json missing"; exit 1)
+
+      - name: Create/Update GitHub Release & Upload Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ inputs.version }}
+          name: v${{ inputs.version }}
+          draft: ${{ inputs.draft }}
+          prerelease: ${{ inputs.prerelease }}
+          make_latest: ${{ inputs.make_latest }}
+          generate_release_notes: true
+          files: |
+            *.zip
+            module.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

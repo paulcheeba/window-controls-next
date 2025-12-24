@@ -11,6 +11,7 @@
     --miniminh: unset;
     --minimaxh: unset;
     --taskbarcolor: #0000;
+    --wc-taskbar-height: 40px;
 }
 
 #minimized-bar {
@@ -29,10 +30,86 @@
 }
 
 #window-controls-persistent {
-    position: absolute;
-    width: 100%;
-    display: table-row;
+    position: fixed;
+    left: 0;
+    right: 0;
+    height: var(--wc-taskbar-height);
     background-color: var(--taskbarcolor);
+    z-index: 100000;
+    pointer-events: auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 6px;
+    box-sizing: border-box;
+}
+
+body.wc-taskbar-top #window-controls-persistent {
+    top: 0;
+    bottom: auto;
+}
+
+body.wc-taskbar-bottom #window-controls-persistent {
+    bottom: 0;
+    top: auto;
+}
+
+/* Make room for the fixed taskbar by shifting and resizing the Foundry interface/canvas.
+   Do NOT use inset; use explicit top/bottom per mode. */
+body.wc-taskbar-top #interface {
+    top: var(--wc-taskbar-height) !important;
+    bottom: 0px !important;
+    height: calc(100vh - var(--wc-taskbar-height)) !important;
+}
+
+body.wc-taskbar-bottom #interface {
+    top: 0px !important;
+    bottom: var(--wc-taskbar-height) !important;
+    height: calc(100vh - var(--wc-taskbar-height)) !important;
+}
+
+/* Fallback for any Foundry variants where #board is not inside #interface. */
+body.wc-taskbar-top #board {
+    top: var(--wc-taskbar-height) !important;
+    bottom: 0px !important;
+    height: calc(100vh - var(--wc-taskbar-height)) !important;
+}
+
+body.wc-taskbar-bottom #board {
+    top: 0px !important;
+    bottom: var(--wc-taskbar-height) !important;
+    height: calc(100vh - var(--wc-taskbar-height)) !important;
+}
+
+/* Sidebar: in taskbar mode, just fit the resized interface to avoid clipping. */
+body.wc-taskbar-top #sidebar,
+body.wc-taskbar-bottom #sidebar {
+    height: 100% !important;
+}
+
+/* Keep the legacy variable coherent for any remaining rules. */
+body.wc-taskbar-top,
+body.wc-taskbar-bottom {
+    --minisidebaradj: calc(100vh - var(--wc-taskbar-height) - 10px);
+}
+
+#window-controls-persistent .wc-taskbar-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0 8px;
+}
+
+#window-controls-persistent .wc-taskbar-btn.pinned {
+    background-color: var(--wcbordercolor);
+}
+
+#window-controls-persistent .wc-taskbar-btn .wc-taskbar-label {
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 #sidebar {
@@ -53,7 +130,24 @@
     box-shadow: 0 0 var(--wcshadowstrength) 0 var(--wcshadowcolor);
 }
 
-.minimized.window-app .window-header a {
+.window-controls-inline {
+    display: inline-flex !important;
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 2px;
+}
+
+.window-controls-inline .window-controls-inline-btn {
+    display: inline-flex !important;
+    flex: 0 0 auto;
+    align-items: center !important;
+    justify-content: center !important;
+}
+
+.minimized.window-app .window-header a,
+.minimized.window-app .window-header button {
     margin: 0 0 0 2px;
 }
 

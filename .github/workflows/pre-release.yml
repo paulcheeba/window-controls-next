@@ -1,0 +1,176 @@
+name: Publish Pre-Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Module version (e.g. 1.3.2)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-pre-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # removed noisy context echo step
+
+      - name: Ensure jq & zip are available
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq zip
+
+      - name: Validate module.json presence
+        run: |
+          test -f module.json || (echo "module.json not found at repo root." && exit 1)
+
+      - name: Rewrite module.json (version, manifest, download)
+        shell: bash
+        run: |
+          set -euo pipefail
+          REPO="${GITHUB_REPOSITORY}"                 # owner/repo
+          VERSION="${{ inputs.version }}"             # e.g. 1.3.2
+          TAG="v${{ inputs.version }}"                # prerelease tag includes leading 'v'
+          MODULE_ID=$(jq -r '.id' module.json)
+
+          MANIFEST_URL="https://github.com/${REPO}/releases/download/${TAG}/module.json"
+          DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${TAG}/${MODULE_ID}.zip"
+
+          cp module.json module.json.bak
+
+          jq --arg v "$VERSION" \
+             --arg manifest "$MANIFEST_URL" \
+             --arg download "$DOWNLOAD_URL" \
+             '
+             .version = $v
+             | .manifest = $manifest
+             | .download = $download
+             ' module.json > module.json.tmp
+
+          mv module.json.tmp module.json
+
+          echo "Updated module.json to version ${VERSION}:"
+          cat module.json
+
+      # removed committing back to main; prerelease artifacts only
+
+      - name: Build ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          MODULE_ID=$(jq -r '.id' module.json)
+          ZIPNAME="${MODULE_ID}.zip"
+          rm -f "$ZIPNAME"
+          # Create a clean ZIP with module files at the root.
+          zip -r "$ZIPNAME" . \
+            -x ".git/*" \
+               ".github/*" \
+               ".gitignore" \
+               "docs/*" \
+               ".DS_Store"
+          [ -f "$ZIPNAME" ] || (echo "ZIP was not produced." && exit 1)
+          echo "ZIP contents:"
+          unzip -l "$ZIPNAME"
+
+      - name: Verify release assets exist
+        run: |
+          MODULE_ID=$(jq -r '.id' module.json)
+          test -f "${MODULE_ID}.zip" || (echo "${MODULE_ID}.zip missing"; exit 1)
+          test -f module.json || (echo "module.json missing"; exit 1)
+
+      - name: Build release notes (include manifest URL code block)
+        run: |
+          REPO="${GITHUB_REPOSITORY}"
+          TAG="v${{ inputs.version }}"
+          MODULE_ID=$(jq -r '.id' module.json)
+          MODULE_TITLE=$(jq -r '.title' module.json)
+          MANIFEST_URL="https://github.com/${REPO}/releases/download/${TAG}/module.json"
+          DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${TAG}/${MODULE_ID}.zip"
+          RELEASE_URL="https://github.com/${REPO}/releases/tag/${TAG}"
+          {
+            echo "Automated pre-release for testing."
+            echo
+            echo "**Version:** \`${TAG}\`"
+            echo
+            echo "### 📦 Quick Links"
+            echo
+            echo "- **Release Page:** [${TAG}](${RELEASE_URL})"
+            echo "- **Download Module:** [${MODULE_ID}.zip](${DOWNLOAD_URL})"
+            echo
+            echo "### 🔗 Pre-release Manifest URL"
+            echo
+            echo "Copy this URL to install the pre-release version in Foundry VTT:"
+            echo
+            echo '```'
+            echo "${MANIFEST_URL}"
+            echo '```'
+            echo
+            echo "### 📋 Installation Instructions"
+            echo
+            echo "1. In Foundry VTT, go to **Add-on Modules**"
+            echo "2. Click **Install Module**"
+            echo "3. Paste the manifest URL above into the **Manifest URL** field"
+            echo "4. Click **Install**"
+          } > release_body.md
+
+      - name: Create workflow summary
+        run: |
+          REPO="${GITHUB_REPOSITORY}"
+          TAG="v${{ inputs.version }}"
+          MODULE_ID=$(jq -r '.id' module.json)
+          MODULE_TITLE=$(jq -r '.title' module.json)
+          MANIFEST_URL="https://github.com/${REPO}/releases/download/${TAG}/module.json"
+          DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${TAG}/${MODULE_ID}.zip"
+          RELEASE_URL="https://github.com/${REPO}/releases/tag/${TAG}"
+          {
+            echo "# 🚀 ${MODULE_TITLE} Pre-Release ${TAG} Published Successfully!"
+            echo
+            echo "## 📦 Release Assets"
+            echo
+            echo "| Asset | Link |"
+            echo "|-------|------|"
+            echo "| 📄 Release Page | [${TAG}](${RELEASE_URL}) |"
+            echo "| 📁 Module ZIP | [${MODULE_ID}.zip](${DOWNLOAD_URL}) |"
+            echo "| 📋 Manifest JSON | [module.json](${MANIFEST_URL}) |"
+            echo
+            echo "## 🔗 Foundry VTT Installation"
+            echo
+            echo "**Manifest URL for Foundry VTT:**"
+            echo
+            echo '```'
+            echo "${MANIFEST_URL}"
+            echo '```'
+            echo
+            echo "> Copy the URL above and paste it into the **Manifest URL** field when installing the module in Foundry VTT."
+            echo
+            echo "## ✅ Build Details"
+            echo
+            echo "- **Version:** \`${TAG}\`"
+            echo "- **Commit:** \`${GITHUB_SHA:0:7}\`"
+            echo "- **Branch:** \`${GITHUB_REF_NAME}\`"
+            echo "- **Workflow:** Pre-Release"
+          } >> $GITHUB_STEP_SUMMARY
+
+      - name: Create/Update GitHub Pre-Release & Upload Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ inputs.version }}
+          name: v${{ inputs.version }}
+          target_commitish: ${{ github.sha }}
+          prerelease: true
+          draft: false
+          generate_release_notes: false
+          body_path: release_body.md
+          files: |
+            *.zip
+            module.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

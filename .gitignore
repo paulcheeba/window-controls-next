@@ -5,3 +5,6 @@
 /dist/
 /node_modules/
 *.zip
+
+# Local debug scratch
+.github/consoleLogs.txt
