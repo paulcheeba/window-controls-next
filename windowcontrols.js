@@ -160,8 +160,10 @@ class WindowControls {
   static _sortTaskbarButtons() {
     const section = WindowControls._getTaskbarSection();
     if (!section) return;
+    const container = WindowControls._getTaskbarButtonsContainer();
+    if (!container) return;
 
-    const buttons = Array.from(section.querySelectorAll('button.wc-taskbar-btn'))
+    const buttons = Array.from(container.querySelectorAll('button.wc-taskbar-btn'))
       .filter(b => b instanceof HTMLElement);
     if (buttons.length <= 1) return;
 
@@ -181,7 +183,7 @@ class WindowControls {
       return aa.key.localeCompare(bb.key);
     });
 
-    for (const btn of buttons) section.appendChild(btn);
+    for (const btn of buttons) container.appendChild(btn);
   }
 
   static _ensureHoverPreviewHandlers(entry, app) {
@@ -327,9 +329,60 @@ class WindowControls {
     return document.getElementById('window-controls-persistent');
   }
 
+  static _getTaskbarButtonsContainer() {
+    const section = WindowControls._getTaskbarSection();
+    if (!section) return null;
+    // Newer versions wrap buttons in a scroll container.
+    return section.querySelector(':scope > .wc-taskbar-scroll') ?? section;
+  }
+
   static _ensureTaskbarSection() {
-    if (WindowControls._getTaskbarSection()) return;
-    document.body.insertAdjacentHTML('beforeend', '<section id="window-controls-persistent"></section>');
+    let section = WindowControls._getTaskbarSection();
+    if (!section) {
+      document.body.insertAdjacentHTML(
+        'beforeend',
+        '<section id="window-controls-persistent"><div class="wc-taskbar-scroll"></div></section>'
+      );
+      section = WindowControls._getTaskbarSection();
+    }
+    if (!section) return;
+
+    // Upgrade legacy markup by ensuring a dedicated scroll container exists.
+    let container = section.querySelector(':scope > .wc-taskbar-scroll');
+    if (!container) {
+      container = document.createElement('div');
+      container.className = 'wc-taskbar-scroll';
+      const existingChildren = Array.from(section.children);
+      section.appendChild(container);
+      for (const child of existingChildren) {
+        if (child === container) continue;
+        container.appendChild(child);
+      }
+    }
+
+    // Allow mouse wheel / trackpad to scroll the taskbar horizontally without a visible scrollbar.
+    if (container && container.dataset && container.dataset.wcWheelScroll !== '1') {
+      container.dataset.wcWheelScroll = '1';
+      container.addEventListener('wheel', (ev) => {
+        // Map vertical wheel to horizontal *only* when useful.
+        // Let native horizontal (trackpads / shift+wheel) behave normally.
+        const maxScrollLeft = container.scrollWidth - container.clientWidth;
+        if (maxScrollLeft <= 0) return;
+
+        // If this is already a horizontal scroll gesture, don't interfere.
+        if (Math.abs(ev.deltaX) > Math.abs(ev.deltaY)) return;
+
+        const delta = ev.deltaY;
+        if (!delta) return;
+
+        const prev = container.scrollLeft;
+        const next = Math.max(0, Math.min(maxScrollLeft, prev + delta));
+        if (next === prev) return;
+
+        container.scrollLeft = next;
+        ev.preventDefault();
+      }, { passive: false });
+    }
   }
 
   static _applyTaskbarDockLayout() {
@@ -433,6 +486,8 @@ class WindowControls {
     WindowControls._ensureTaskbarSection();
     const section = WindowControls._getTaskbarSection();
     if (!section) return;
+    const container = WindowControls._getTaskbarButtonsContainer();
+    if (!container) return;
 
     const key = WindowControls._getAppKey(app);
     if (!key) return;
@@ -490,7 +545,7 @@ class WindowControls {
         }
       });
 
-      section.appendChild(btn);
+      container.appendChild(btn);
       existingEntry.button = btn;
     }
 
@@ -1203,8 +1258,19 @@ class WindowControls {
       type: String,
       default: "#0000",
       onChange: (newValue) => {
-        const rootStyle = document.querySelector(':root').style;
-        rootStyle.setProperty('--taskbarcolor', newValue);
+        WindowControls._setTaskbarColor(newValue);
+      }
+    });
+
+    game.settings.register('window-controls', 'taskbarScrollbarColor', {
+      name: game.i18n.localize("WindowControls.TaskbarScrollbarColorName"),
+      hint: game.i18n.localize("WindowControls.TaskbarScrollbarColorHint"),
+      scope: 'world',
+      config: true,
+      type: String,
+      default: "",
+      onChange: (newValue) => {
+        WindowControls._setTaskbarScrollbarColor(newValue);
       }
     });
 
@@ -1260,6 +1326,9 @@ class WindowControls {
     });
 
     Hooks.once('ready', async function () {
+
+      // Apply saved taskbar color on startup (settings onChange does not run on load).
+      WindowControls._applyTaskbarColorFromSetting();
 
       // Migrate legacy Organized Minimize values to taskbar modes.
       const current = game.settings.get('window-controls', 'organizedMinimize');
@@ -1371,6 +1440,51 @@ class WindowControls {
 
   }
 
+  static _setTaskbarColor(value) {
+    if (typeof value !== 'string') return;
+    const rootStyle = document.documentElement?.style;
+    if (rootStyle) rootStyle.setProperty('--taskbarcolor', value);
+
+    // Optional direct style fallback (helps if a theme overrides the CSS variable).
+    const bar = document.getElementById('window-controls-persistent');
+    if (bar) bar.style.backgroundColor = value;
+  }
+
+  static _setTaskbarScrollbarColor(value) {
+    if (typeof value !== 'string') return;
+    const v = value.trim();
+
+    const rootStyle = document.documentElement?.style;
+    const bar = document.getElementById('window-controls-persistent');
+
+    if (!v) {
+      if (rootStyle) rootStyle.removeProperty('--wc-taskbar-scrollbar-color');
+      if (bar) bar.style.removeProperty('--wc-taskbar-scrollbar-color');
+      return;
+    }
+
+    if (rootStyle) rootStyle.setProperty('--wc-taskbar-scrollbar-color', v);
+    if (bar) bar.style.setProperty('--wc-taskbar-scrollbar-color', v);
+  }
+
+  static _applyTaskbarColorFromSetting() {
+    try {
+      const value = game?.settings?.get('window-controls', 'taskbarColor');
+      if (typeof value === 'string') WindowControls._setTaskbarColor(value);
+    } catch (e) {
+      // Ignore (e.g. before game/settings available).
+    }
+  }
+
+  static _applyTaskbarScrollbarColorFromSetting() {
+    try {
+      const value = game?.settings?.get('window-controls', 'taskbarScrollbarColor');
+      if (typeof value === 'string') WindowControls._setTaskbarScrollbarColor(value);
+    } catch (e) {
+      // Ignore (e.g. before game/settings available).
+    }
+  }
+
   static _organizeSettingsConfig(html) {
     if (!html) return;
 
@@ -1396,7 +1510,7 @@ class WindowControls {
     // Remove previous injected headers if SettingsConfig re-renders.
     moduleRoot.find('.wc-settings-header').remove();
 
-    const taskbarKeys = ['organizedMinimize', 'minimizeButton', 'clickOutsideMinimize', 'taskbarColor'];
+    const taskbarKeys = ['organizedMinimize', 'minimizeButton', 'clickOutsideMinimize', 'taskbarColor', 'taskbarScrollbarColor'];
     const pinningKeys = ['pinnedButton', 'pinnedDoubleTapping', 'rememberPinnedWindows'];
 
     const taskbarHeader = $('<h3 class="wc-settings-header">Taskbar</h3>');
@@ -1414,6 +1528,60 @@ class WindowControls {
       const g = getGroup(key);
       if (g?.length) moduleRoot.append(g);
     }
+
+    // Enhance color settings with a color picker control.
+    WindowControls._enhanceColorPickerSetting($html, 'taskbarColor');
+    WindowControls._enhanceColorPickerSetting($html, 'taskbarScrollbarColor');
+  }
+
+  static _enhanceColorPickerSetting($html, key) {
+    const $text = $html.find(`[name="window-controls.${key}"]`);
+    if (!$text?.length) return;
+    if ($text.data('wcColorEnhanced') === 1) return;
+    $text.data('wcColorEnhanced', 1);
+
+    const $fields = $text.closest('.form-fields');
+    if (!$fields?.length) return;
+
+    const normalizeForPicker = (value) => {
+      if (typeof value !== 'string') return null;
+      const v = value.trim();
+      if (!v.startsWith('#')) return null;
+
+      // Expand shorthand #RGB/#RGBA.
+      if (v.length === 4 || v.length === 5) {
+        const r = v[1], g = v[2], b = v[3];
+        return `#${r}${r}${g}${g}${b}${b}`.toLowerCase();
+      }
+
+      // Use the first 6 hex digits (#RRGGBB) even if alpha is present.
+      if (v.length >= 7) return v.slice(0, 7).toLowerCase();
+      return null;
+    };
+
+    const initial = normalizeForPicker($text.val()) ?? '#000000';
+
+    // Foundry core often renders a text field plus a color input; we mirror that behavior.
+    const picker = document.createElement('input');
+    picker.type = 'color';
+    picker.className = 'wc-color-picker';
+    picker.value = initial;
+
+    picker.addEventListener('input', () => {
+      const color = picker.value;
+      $text.val(color);
+      // Ensure SettingsConfig notices the update.
+      $text.trigger('input');
+      $text.trigger('change');
+    });
+
+    $text.on('input change', () => {
+      const v = normalizeForPicker($text.val());
+      if (v) picker.value = v;
+    });
+
+    // Insert immediately after the text field.
+    $text.after(picker);
   }
 
 }
@@ -1448,6 +1616,10 @@ Hooks.once('ready', () => {
 
   // Ensure taskbar section exists in taskbar mode.
   WindowControls._applyTaskbarDockLayout();
+
+  // Apply taskbar visual settings after DOM is ready.
+  WindowControls._applyTaskbarColorFromSetting();
+  WindowControls._applyTaskbarScrollbarColorFromSetting();
 
 
 })

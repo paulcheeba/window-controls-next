@@ -39,9 +39,39 @@
     pointer-events: auto;
     display: flex;
     align-items: center;
-    gap: 6px;
     padding: 0 6px;
     box-sizing: border-box;
+}
+
+/* Taskbar buttons scroll container (horizontal), with scrollbar hidden */
+#window-controls-persistent > .wc-taskbar-scroll {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    white-space: nowrap;
+}
+
+/* Thin horizontal scrollbar (only shows when overflow exists) */
+#window-controls-persistent > .wc-taskbar-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--wc-taskbar-scrollbar-color, var(--color-border-light-2, currentColor)) transparent;
+}
+
+#window-controls-persistent > .wc-taskbar-scroll::-webkit-scrollbar {
+    height: 6px;
+}
+
+#window-controls-persistent > .wc-taskbar-scroll::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+#window-controls-persistent > .wc-taskbar-scroll::-webkit-scrollbar-thumb {
+    background-color: var(--wc-taskbar-scrollbar-color, var(--color-border-light-2, currentColor));
+    border-radius: 999px;
 }
 
 body.wc-taskbar-top #window-controls-persistent {
@@ -110,6 +140,41 @@ body.wc-taskbar-bottom {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+/* Settings: compact square color swatch next to the hex field */
+input[type="color"].wc-color-picker {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 26px !important;
+    height: 26px !important;
+    min-width: 26px !important;
+    max-width: 26px !important;
+    aspect-ratio: 1 / 1;
+    padding: 0 !important;
+    margin: 0;
+    border: 1px solid var(--color-border-light-2, currentColor);
+    border-radius: 3px;
+    background: transparent;
+    cursor: pointer;
+    box-sizing: border-box;
+
+    /* Prevent Foundry/theme flex rules from stretching it into a rectangle */
+    flex: 0 0 auto !important;
+}
+
+input[type="color"].wc-color-picker::-webkit-color-swatch-wrapper {
+    padding: 0;
+}
+
+input[type="color"].wc-color-picker::-webkit-color-swatch {
+    border: 0;
+    border-radius: 2px;
+}
+
+input[type="color"].wc-color-picker::-moz-color-swatch {
+    border: 0;
+    border-radius: 2px;
 }
 
 #sidebar {

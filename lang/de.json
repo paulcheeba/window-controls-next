@@ -34,4 +34,7 @@
   "WindowControls.TaskbarColorName": "Taskbar-Farbe",
   "WindowControls.TaskbarColorHint": "Farbe der Taskleiste, wenn der Organisationsmodus 'Top Taskbar' aktiviert ist"
 
+  ,"WindowControls.TaskbarScrollbarColorName": "Scrollbar-Farbe der Taskleiste"
+  ,"WindowControls.TaskbarScrollbarColorHint": "Farbe des Scrollbar-Reglers der Taskleiste. Leer lassen, um das Theme-Standard zu verwenden."
+
 }

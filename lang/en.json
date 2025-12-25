@@ -38,6 +38,9 @@
   "WindowControls.TaskbarColorName": "Taskbar Color",
   "WindowControls.TaskbarColorHint": "Color of the Taskbar when 'Top Taskbar' Organized Mode is enabled",
 
+  "WindowControls.TaskbarScrollbarColorName": "Taskbar Scrollbar Color",
+  "WindowControls.TaskbarScrollbarColorHint": "Color of the taskbar's horizontal scrollbar thumb. Leave blank to use the theme default.",
+
   "WindowControls.TaskbarHoverPreviewEnabledName": "Taskbar Hover Preview",
   "WindowControls.TaskbarHoverPreviewEnabledHint": "Hover over a taskbar button to temporarily preview the hidden window.",
   "WindowControls.TaskbarHoverPreviewDelayName": "Hover Preview Delay (ms)",

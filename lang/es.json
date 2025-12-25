@@ -34,4 +34,7 @@
   "WindowControls.TaskbarColorName": "Color de la barra de tareas",
   "WindowControls.TaskbarColorHint": "Color de la barra de tareas cuando el modo organizado 'Barra de tareas superior' está activado"
 
+  ,"WindowControls.TaskbarScrollbarColorName": "Color de la barra de desplazamiento"
+  ,"WindowControls.TaskbarScrollbarColorHint": "Color del control de la barra de desplazamiento horizontal de la barra de tareas. Déjalo en blanco para usar el tema."
+
 }

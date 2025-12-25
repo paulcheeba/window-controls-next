@@ -10,10 +10,14 @@ Window Taskbar and Window Buttons: Minimize and Pin floating Windows to a top or
 ### Taskbar (Top/Bottom)
 Dock a fixed taskbar above or below the Foundry UI. It nudges the UI and canvas resizes correctly.
 
+Taskbar appearance is configurable, including taskbar background color and taskbar scrollbar color.
+
 <img width="627" height="39" alt="image" src="https://github.com/user-attachments/assets/c91b0d71-1275-414a-916b-8600891646ab" />
 
 ### Taskbar Buttons
 Taskbar buttons are sorted (pinned first, then type, then title), show a tooltip with the full title, and support hover preview.
+
+When there are too many buttons, the taskbar button strip scrolls horizontally and shows a thin scrollbar.
 
 ### Minimize
 Adds a minimize button to supported sheets. Minimize is instant: the sheet is hidden and represented by a taskbar button.

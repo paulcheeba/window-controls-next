@@ -34,4 +34,7 @@
     "WindowControls.TaskbarColorName": "タスクバーの色",
     "WindowControls.TaskbarColorHint": "トップタスクバー」整理整頓モードが有効な場合のタスクバーの色"
 
+    ,"WindowControls.TaskbarScrollbarColorName": "タスクバーのスクロールバー色"
+    ,"WindowControls.TaskbarScrollbarColorHint": "タスクバーの水平スクロールバー（つまみ）の色。空欄の場合はテーマの既定値を使用します。"
+
 }

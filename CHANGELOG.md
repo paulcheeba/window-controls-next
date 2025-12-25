@@ -1,3 +1,16 @@
+### 13.0.1.2
+* Enhancement: Taskbar buttons can be scrolled horizontally when they overflow
+* Enhancement: Thin horizontal scrollbar under taskbar buttons
+* Enhancement: New setting for taskbar scrollbar thumb color (with color picker)
+
+### 13.0.1.1
+* Bugfix: Remember pinned windows restore idempotently (won't accidentally unpin on reload)
+* Removed: Maximize button and setting
+* Enhancement: Settings reorganized into "Taskbar" and "Pinning" sections
+* Bugfix: Settings organizer supports both jQuery and raw HTMLElement hook args
+* Bugfix: Taskbar color applies on startup (not only after changing the setting)
+* Enhancement: Taskbar color setting now includes a built-in style color picker
+
 ### 13.0.0.1
 * Compatibility: Foundry V13 support
 * Enhancement: Taskbar is docked above/below the UI (cannot be covered), and the Foundry viewport/canvas is resized to make room
