@@ -2,7 +2,7 @@
 
 # Window Controls (Foundry VTT v13)
 
-Window Taskbar and Window Buttons: Minimize, Maximize and Pin floating Windows to a top or bottom taskbar, configurable, allows minimizing windows on a fixed horizontal taskbar located on top or bottom. Updated for Foundry VTT v13+.
+Window Taskbar and Window Buttons: Minimize and Pin floating Windows to a top or bottom taskbar. Updated for Foundry VTT v13+.
 
 
 ## Features
@@ -30,9 +30,6 @@ Hover your mouse over a minimized window tab for a quick view of the sheet witho
 
 ### Remember Pinned Windows
 When enabled, pinned sheets are remembered by Document UUID and restored on next load.
-
-### Maximize
-Optional maximize button to expand a sheet to available space.
 
 # Credits
 * Original module concept and early implementations: JeansenVaars
