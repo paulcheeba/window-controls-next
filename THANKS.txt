@@ -1,7 +1,5 @@
-I hope you enjoy my small contributions to Foundry VTT.
-If you happen to appreciate my work, do check my Ko-Fi page :)
-
-https://ko-fi.com/jeansenvaars
+Thank you JeansenVaars for originally creating this module.
+Thank you saif-ellafi for your continued work on this module.
 
 Sincerely,
-JeansenVaars
+Paulcheeba

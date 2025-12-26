@@ -6,7 +6,9 @@
 /node_modules/
 *.zip
 
-# Local debug scratch
-.github/consoleLogs.txt
-# Local debug scratch
-.github/errorLog.txt
+# Dev scratch (logs, notes, experiments)
+devFolder/
+
+# Copilot/dev prompt/instruction artifacts (keep workflows)
+.github/instructions/
+.github/prompts/

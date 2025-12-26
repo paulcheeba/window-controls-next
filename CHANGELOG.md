@@ -1,3 +1,10 @@
+### 13.1.0.0
+* Enhancement: New "Pinned Header Color" setting (with color picker)
+* Enhancement: Pinned window header overlay uses the selected color at 25% opacity
+* Enhancement: Pinned taskbar buttons use a 20% darker solid color derived from the pinned header color
+
+> Note: The 13.x versions are the reworked Foundry VTT v13+ fork/modernization of the original module.
+
 ### 13.0.1.2
 * Enhancement: Taskbar buttons can be scrolled horizontally when they overflow
 * Enhancement: Thin horizontal scrollbar under taskbar buttons
