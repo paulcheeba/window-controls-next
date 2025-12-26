@@ -13,7 +13,7 @@ Window Taskbar and Window Buttons: Minimize and Pin floating Windows to a top or
 Dock a fixed taskbar above or below the Foundry UI. It nudges the UI and canvas resizes correctly.
 - Taskbar appearance is configurable, including taskbar background color and taskbar scrollbar color.
 
-<img width="612" height="40" alt="image" src="https://github.com/user-attachments/assets/3308fd27-e08f-4a7f-b381-9f69cec05fbb" />
+<img width="548" height="45" alt="image" src="https://github.com/user-attachments/assets/670ed316-6bd9-4a1d-9e21-acc3aeb12e4d" />
 
 ### Taskbar Buttons
 Taskbar buttons are sorted (pinned first, then type, then title), show a tooltip with the full title, and support hover preview.
@@ -23,13 +23,13 @@ When there are too many buttons, the taskbar button strip scrolls horizontally a
 ### Minimize
 Adds a minimize button to supported sheets. Minimize is instant: the sheet is hidden and represented by a taskbar button.
 
-<img width="808" height="40" alt="image" src="https://github.com/user-attachments/assets/906122e5-6051-4dab-82c1-c40330eab8a7" />
+<img width="805" height="39" alt="image" src="https://github.com/user-attachments/assets/cc6b9614-7df8-40cf-93cb-9ffeebbb18d1" />
 
 ### Pin
 Pin a sheet so it stays available on the taskbar and can optionally be restored across sessions.
 - Pinned sheet header appearance is configurable, including header overlay color that also affects the taskbar button color.
 
-<img width="805" height="44" alt="image" src="https://github.com/user-attachments/assets/19cd7f53-4f20-4e3d-8917-0b85c2166f8e" />
+<img width="808" height="42" alt="image" src="https://github.com/user-attachments/assets/58816dc4-4679-4ef3-b0f7-745a0144cae3" />
 
 ### Quick view on hover
 Hover your mouse over a minimized window tab for a quick view of the sheet without reopening it.
