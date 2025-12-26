@@ -1,8 +1,11 @@
 class WindowControls {
 
+  static MODULE_ID = 'window-controls-next';
+  static LEGACY_MODULE_ID = 'window-controls';
+
   static externalMinimize = false;
 
-  static _PINNED_FLAG_SCOPE = 'window-controls';
+  static _PINNED_FLAG_SCOPE = 'window-controls-next';
   static _PINNED_FLAG_KEY = 'pinned-window-ids';
 
   static _rememberedPinnedIds = new Set();
@@ -21,6 +24,24 @@ class WindowControls {
   static debouncedReload = (foundry?.utils?.debounce ?? globalThis.debounce)(() => window.location.reload(), 100);
 
   static _taskbarEntries = new Map();
+
+  static async _migrateLegacyPinnedFlagIfNeeded() {
+    try {
+      // If the legacy module is active, assume the user wants to keep them separate.
+      if (game?.modules?.get?.(WindowControls.LEGACY_MODULE_ID)?.active) return;
+
+      const current = game?.user?.getFlag?.(WindowControls.MODULE_ID, WindowControls._PINNED_FLAG_KEY);
+      const legacy = game?.user?.getFlag?.(WindowControls.LEGACY_MODULE_ID, WindowControls._PINNED_FLAG_KEY);
+
+      const currentEmpty = !Array.isArray(current) || current.length === 0;
+      const legacyHas = Array.isArray(legacy) && legacy.length > 0;
+      if (!currentEmpty || !legacyHas) return;
+
+      await game.user.setFlag(WindowControls.MODULE_ID, WindowControls._PINNED_FLAG_KEY, legacy);
+    } catch (e) {
+      // Best-effort migration only.
+    }
+  }
 
   // Hover preview (taskbar buttons)
   static _TASKBAR_HOVER_PREVIEW_DELAY_MS = 1000;
@@ -120,7 +141,7 @@ class WindowControls {
     try {
       if (app?._pinned === true && existing?._pinned !== true) {
         WindowControls.applyPinnedMode(existing, { mode: 'pin' });
-        if (game.settings.get('window-controls', 'rememberPinnedWindows')) void WindowControls.persistPinned(existing);
+        if (game.settings.get(WindowControls.MODULE_ID, 'rememberPinnedWindows')) void WindowControls.persistPinned(existing);
       }
 
       // Ensure existing is visible and focused.
@@ -287,7 +308,7 @@ class WindowControls {
   }
 
   static _isRememberedPinned(app) {
-    if (!game.settings.get('window-controls', 'rememberPinnedWindows')) return false;
+    if (!game.settings.get(WindowControls.MODULE_ID, 'rememberPinnedWindows')) return false;
     const id = WindowControls._getAppPersistentId(app);
     if (!id) return false;
     return WindowControls._rememberedPinnedIds.has(id);
@@ -313,7 +334,7 @@ class WindowControls {
   }
 
   static _getTaskbarSetting() {
-    const raw = game.settings.get('window-controls', 'organizedMinimize');
+    const raw = game.settings.get(WindowControls.MODULE_ID, 'organizedMinimize');
     // Migrate legacy values to taskbar modes.
     if (raw === 'persistentTop' || raw === 'persistentBottom' || raw === 'disabled') return raw;
     if (raw === 'top' || raw === 'topBar') return 'persistentTop';
@@ -648,8 +669,8 @@ class WindowControls {
     // Avoid duplicates on re-render.
     if (header.querySelector('.window-controls-inline')) return;
 
-    const minimizeSetting = game.settings.get('window-controls', 'minimizeButton');
-    const pinnedSetting = game.settings.get('window-controls', 'pinnedButton');
+    const minimizeSetting = game.settings.get(WindowControls.MODULE_ID, 'minimizeButton');
+    const pinnedSetting = game.settings.get(WindowControls.MODULE_ID, 'pinnedButton');
     if (minimizeSetting !== 'enabled' && pinnedSetting !== 'enabled') return;
 
     const closeControl = WindowControls._getCloseControlElement(app, el);
@@ -745,7 +766,7 @@ class WindowControls {
   }
 
   static getCurrentMaxGap() {
-    const setting = game.settings.get('window-controls', 'organizedMinimize');
+    const setting = game.settings.get(WindowControls.MODULE_ID, 'organizedMinimize');
     const sidebarGap = WindowControls.cssMinimizedSize * (setting === 'persistentTop' || setting === 'persistentBottom' ? 3 : 4);
     const boardSize = parseInt($("#board").css('width'));
     return boardSize - sidebarGap;
@@ -805,7 +826,7 @@ class WindowControls {
   }
 
   static async _restoreRememberedPinnedWindows() {
-    if (!game.settings.get('window-controls', 'rememberPinnedWindows')) return;
+    if (!game.settings.get(WindowControls.MODULE_ID, 'rememberPinnedWindows')) return;
     WindowControls._syncRememberedPinnedCache();
     const list = WindowControls._getRememberedPinnedList();
 
@@ -854,7 +875,7 @@ class WindowControls {
   }
 
   static getTopPosition() {
-    const minimizedSetting = game.settings.get('window-controls', 'organizedMinimize');
+    const minimizedSetting = game.settings.get(WindowControls.MODULE_ID, 'organizedMinimize');
     if (['bottomBar', 'bottom'].includes(minimizedSetting)) {
       let hotbarSetting;
       if (game.modules.get('minimal-ui')?.active)
@@ -893,7 +914,7 @@ class WindowControls {
 
   static getLeftPosition(app) {
     const appKey = WindowControls._getAppKey(app);
-    const minimizedSetting = game.settings.get('window-controls', 'organizedMinimize');
+    const minimizedSetting = game.settings.get(WindowControls.MODULE_ID, 'organizedMinimize');
     const minGap = ['top', 'topBar'].includes(minimizedSetting) ? WindowControls.cssTopBarLeftStart + 10 : (minimizedSetting === 'persistentTop' || minimizedSetting === 'persistentBottom' ? WindowControls.cssTopBarPersistentLeftStart + 10 : WindowControls.cssBottomBarLeftStart + 10);
     const jumpGap = WindowControls.cssMinimizedSize + 10;
     const maxGap = WindowControls.getCurrentMaxGap();
@@ -917,7 +938,7 @@ class WindowControls {
   }
 
   static setMinimizedPosition(app) {
-    const setting = game.settings.get('window-controls', 'organizedMinimize');
+    const setting = game.settings.get(WindowControls.MODULE_ID, 'organizedMinimize');
     const alreadyStashedWindow = WindowControls.appInStash(WindowControls._getAppKey(app));
     if (!alreadyStashedWindow && WindowControls.getOverflowedState()) return;
     const leftPos = WindowControls.getLeftPosition(app);
@@ -1013,7 +1034,7 @@ class WindowControls {
 
     if (!app._closeBkp) app._closeBkp = app.close;
 
-    if (game.settings.get('window-controls', 'pinnedDoubleTapping') === false) {
+    if (game.settings.get(WindowControls.MODULE_ID, 'pinnedDoubleTapping') === false) {
       app.close = async function () {
         if (!WindowControls._isMinimized(this)) await this.minimize();
       };
@@ -1035,7 +1056,7 @@ class WindowControls {
     WindowControls._setCloseControlHidden(app, true, el);
     header.find(".entry-image").hide();
     header.find(".entry-text").hide();
-    if (game.settings.get('window-controls', 'rememberPinnedWindows')) void WindowControls.persistPinned(app);
+    if (game.settings.get(WindowControls.MODULE_ID, 'rememberPinnedWindows')) void WindowControls.persistPinned(app);
     WindowControls._syncPinnedTaskbarButton(app);
   }
 
@@ -1058,7 +1079,7 @@ class WindowControls {
     header.find(".entry-image").show();
     header.find(".entry-text").show();
     WindowControls._setCloseControlHidden(app, false, el);
-    if (game.settings.get('window-controls', 'rememberPinnedWindows')) void WindowControls.unpersistPinned(app);
+    if (game.settings.get(WindowControls.MODULE_ID, 'rememberPinnedWindows')) void WindowControls.unpersistPinned(app);
     WindowControls._syncPinnedTaskbarButton(app);
   }
 
@@ -1107,7 +1128,7 @@ class WindowControls {
 
     const newButtons = [];
 
-    const minimizeSetting = game.settings.get('window-controls', 'minimizeButton');
+    const minimizeSetting = game.settings.get(WindowControls.MODULE_ID, 'minimizeButton');
     if (minimizeSetting === 'enabled') {
       newButtons.push({
         label: "",
@@ -1125,7 +1146,7 @@ class WindowControls {
       });
     }
 
-    const pinnedSetting = game.settings.get('window-controls', 'pinnedButton');
+    const pinnedSetting = game.settings.get(WindowControls.MODULE_ID, 'pinnedButton');
     if (pinnedSetting === 'enabled') {
       newButtons.push({
         label: "",
@@ -1181,7 +1202,7 @@ class WindowControls {
   }
 
   static initSettings() {
-    game.settings.register('window-controls', 'organizedMinimize', {
+    game.settings.register(WindowControls.MODULE_ID, 'organizedMinimize', {
       name: game.i18n.localize("WindowControls.OrganizedMinimizeName"),
       hint: game.i18n.localize("WindowControls.OrganizedMinimizeHint"),
       scope: 'client',
@@ -1195,7 +1216,7 @@ class WindowControls {
       default: "persistentTop",
       onChange: WindowControls.debouncedReload
     });
-    game.settings.register('window-controls', 'minimizeButton', {
+    game.settings.register(WindowControls.MODULE_ID, 'minimizeButton', {
       name: game.i18n.localize("WindowControls.MinimizeButtonName"),
       hint: game.i18n.localize("WindowControls.MinimizeButtonHint"),
       scope: 'world',
@@ -1208,7 +1229,7 @@ class WindowControls {
       default: "enabled",
       onChange: WindowControls.debouncedReload
     });
-    game.settings.register('window-controls', 'pinnedButton', {
+    game.settings.register(WindowControls.MODULE_ID, 'pinnedButton', {
       name: game.i18n.localize("WindowControls.PinnedButtonName"),
       hint: game.i18n.localize("WindowControls.PinnedButtonHint"),
       scope: 'world',
@@ -1221,7 +1242,7 @@ class WindowControls {
       default: "enabled",
       onChange: WindowControls.debouncedReload
     });
-    game.settings.register('window-controls', 'clickOutsideMinimize', {
+    game.settings.register(WindowControls.MODULE_ID, 'clickOutsideMinimize', {
       name: game.i18n.localize("WindowControls.ClickOutsideMinimizeName"),
       hint: game.i18n.localize("WindowControls.ClickOutsideMinimizeHint"),
       scope: 'world',
@@ -1230,7 +1251,7 @@ class WindowControls {
       default: false,
       onChange: WindowControls.debouncedReload
     });
-    game.settings.register('window-controls', 'pinnedDoubleTapping', {
+    game.settings.register(WindowControls.MODULE_ID, 'pinnedDoubleTapping', {
       name: game.i18n.localize("WindowControls.PinnedDoubleTappingName"),
       hint: game.i18n.localize("WindowControls.PinnedDoubleTappingHint"),
       scope: 'world',
@@ -1238,7 +1259,7 @@ class WindowControls {
       type: Boolean,
       default: true
     });
-    game.settings.register('window-controls', 'rememberPinnedWindows', {
+    game.settings.register(WindowControls.MODULE_ID, 'rememberPinnedWindows', {
       name: game.i18n.localize("WindowControls.RememberPinnedName"),
       hint: game.i18n.localize("WindowControls.RememberPinnedHint"),
       scope: 'world',
@@ -1251,7 +1272,7 @@ class WindowControls {
       }
     });
 
-    game.settings.register('window-controls', 'pinnedHeaderColor', {
+    game.settings.register(WindowControls.MODULE_ID, 'pinnedHeaderColor', {
       name: game.i18n.localize("WindowControls.PinnedHeaderColorName"),
       hint: game.i18n.localize("WindowControls.PinnedHeaderColorHint"),
       scope: 'world',
@@ -1262,7 +1283,7 @@ class WindowControls {
         WindowControls._setPinnedHeaderColor(newValue);
       }
     });
-    game.settings.register('window-controls', 'taskbarColor', {
+    game.settings.register(WindowControls.MODULE_ID, 'taskbarColor', {
       name: game.i18n.localize("WindowControls.TaskbarColorName"),
       hint: game.i18n.localize("WindowControls.TaskbarColorHint"),
       scope: 'world',
@@ -1274,7 +1295,7 @@ class WindowControls {
       }
     });
 
-    game.settings.register('window-controls', 'taskbarScrollbarColor', {
+    game.settings.register(WindowControls.MODULE_ID, 'taskbarScrollbarColor', {
       name: game.i18n.localize("WindowControls.TaskbarScrollbarColorName"),
       hint: game.i18n.localize("WindowControls.TaskbarScrollbarColorHint"),
       scope: 'world',
@@ -1339,16 +1360,18 @@ class WindowControls {
 
     Hooks.once('ready', async function () {
 
+      await WindowControls._migrateLegacyPinnedFlagIfNeeded();
+
       // Apply saved taskbar color on startup (settings onChange does not run on load).
       WindowControls._applyTaskbarColorFromSetting();
       WindowControls._applyTaskbarScrollbarColorFromSetting();
       WindowControls._applyPinnedHeaderColorFromSetting();
 
       // Migrate legacy Organized Minimize values to taskbar modes.
-      const current = game.settings.get('window-controls', 'organizedMinimize');
+      const current = game.settings.get(WindowControls.MODULE_ID, 'organizedMinimize');
       const migrated = WindowControls._getTaskbarSetting();
       if (current !== migrated) {
-        await game.settings.set('window-controls', 'organizedMinimize', migrated);
+        await game.settings.set(WindowControls.MODULE_ID, 'organizedMinimize', migrated);
         return;
       }
 
@@ -1416,13 +1439,13 @@ class WindowControls {
         });
       }
 
-      if (game.settings.get('window-controls', 'rememberPinnedWindows')) {
+      if (game.settings.get(WindowControls.MODULE_ID, 'rememberPinnedWindows')) {
         await WindowControls._restoreRememberedPinnedWindows();
       }
 
       // No-op: old persistent dummy windows are no longer used.
 
-      if (game.settings.get('window-controls', 'clickOutsideMinimize')) {
+      if (game.settings.get(WindowControls.MODULE_ID, 'clickOutsideMinimize')) {
         $("#board").click(() => {
           if (canvas.tokens.controlled.length)
             return;
@@ -1530,7 +1553,7 @@ class WindowControls {
 
   static _applyPinnedHeaderColorFromSetting() {
     try {
-      const value = game?.settings?.get('window-controls', 'pinnedHeaderColor');
+      const value = game?.settings?.get(WindowControls.MODULE_ID, 'pinnedHeaderColor');
       if (typeof value === 'string') WindowControls._setPinnedHeaderColor(value);
     } catch (e) {
       // Ignore (e.g. before game/settings available).
@@ -1539,7 +1562,7 @@ class WindowControls {
 
   static _applyTaskbarColorFromSetting() {
     try {
-      const value = game?.settings?.get('window-controls', 'taskbarColor');
+      const value = game?.settings?.get(WindowControls.MODULE_ID, 'taskbarColor');
       if (typeof value === 'string') WindowControls._setTaskbarColor(value);
     } catch (e) {
       // Ignore (e.g. before game/settings available).
@@ -1548,7 +1571,7 @@ class WindowControls {
 
   static _applyTaskbarScrollbarColorFromSetting() {
     try {
-      const value = game?.settings?.get('window-controls', 'taskbarScrollbarColor');
+      const value = game?.settings?.get(WindowControls.MODULE_ID, 'taskbarScrollbarColor');
       if (typeof value === 'string') WindowControls._setTaskbarScrollbarColor(value);
     } catch (e) {
       // Ignore (e.g. before game/settings available).
@@ -1563,7 +1586,7 @@ class WindowControls {
     if (!$html?.length) return;
 
     const getGroup = (key) => {
-      const input = $html.find(`[name="window-controls.${key}"]`);
+      const input = $html.find(`[name="${WindowControls.MODULE_ID}.${key}"]`);
       if (!input?.length) return null;
       return input.closest('.form-group');
     };
@@ -1606,7 +1629,7 @@ class WindowControls {
   }
 
   static _enhanceColorPickerSetting($html, key) {
-    const $text = $html.find(`[name="window-controls.${key}"]`);
+    const $text = $html.find(`[name="${WindowControls.MODULE_ID}.${key}"]`);
     if (!$text?.length) return;
     if ($text.data('wcColorEnhanced') === 1) return;
     $text.data('wcColorEnhanced', 1);
