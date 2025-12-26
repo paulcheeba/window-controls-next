@@ -1250,6 +1250,18 @@ class WindowControls {
         WindowControls._rememberedPinnedIds = new Set();
       }
     });
+
+    game.settings.register('window-controls', 'pinnedHeaderColor', {
+      name: game.i18n.localize("WindowControls.PinnedHeaderColorName"),
+      hint: game.i18n.localize("WindowControls.PinnedHeaderColorHint"),
+      scope: 'world',
+      config: true,
+      type: String,
+      default: "#ff8800",
+      onChange: (newValue) => {
+        WindowControls._setPinnedHeaderColor(newValue);
+      }
+    });
     game.settings.register('window-controls', 'taskbarColor', {
       name: game.i18n.localize("WindowControls.TaskbarColorName"),
       hint: game.i18n.localize("WindowControls.TaskbarColorHint"),
@@ -1329,6 +1341,8 @@ class WindowControls {
 
       // Apply saved taskbar color on startup (settings onChange does not run on load).
       WindowControls._applyTaskbarColorFromSetting();
+      WindowControls._applyTaskbarScrollbarColorFromSetting();
+      WindowControls._applyPinnedHeaderColorFromSetting();
 
       // Migrate legacy Organized Minimize values to taskbar modes.
       const current = game.settings.get('window-controls', 'organizedMinimize');
@@ -1467,6 +1481,62 @@ class WindowControls {
     if (bar) bar.style.setProperty('--wc-taskbar-scrollbar-color', v);
   }
 
+  static _parseHexColor(value) {
+    if (typeof value !== 'string') return null;
+    const v = value.trim();
+    if (!v.startsWith('#')) return null;
+
+    const hex = v.slice(1);
+    const isHex = /^[0-9a-fA-F]+$/.test(hex);
+    if (!isHex) return null;
+
+    // #RGB / #RGBA
+    if (hex.length === 3 || hex.length === 4) {
+      const r = parseInt(hex[0] + hex[0], 16);
+      const g = parseInt(hex[1] + hex[1], 16);
+      const b = parseInt(hex[2] + hex[2], 16);
+      return { r, g, b };
+    }
+
+    // #RRGGBB / #RRGGBBAA
+    if (hex.length === 6 || hex.length === 8) {
+      const r = parseInt(hex.slice(0, 2), 16);
+      const g = parseInt(hex.slice(2, 4), 16);
+      const b = parseInt(hex.slice(4, 6), 16);
+      return { r, g, b };
+    }
+
+    return null;
+  }
+
+  static _setPinnedHeaderColor(value) {
+    // User chooses base color; pinned header is always 25% alpha.
+    // Taskbar pinned buttons are 20% darker and fully opaque.
+    const rgb = WindowControls._parseHexColor(value) ?? { r: 255, g: 136, b: 0 };
+    const headerBg = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.25)`;
+    const dark = {
+      r: Math.max(0, Math.min(255, Math.round(rgb.r * 0.8))),
+      g: Math.max(0, Math.min(255, Math.round(rgb.g * 0.8))),
+      b: Math.max(0, Math.min(255, Math.round(rgb.b * 0.8))),
+    };
+    const btnBg = `rgb(${dark.r}, ${dark.g}, ${dark.b})`;
+
+    const rootStyle = document.documentElement?.style;
+    if (rootStyle) {
+      rootStyle.setProperty('--wc-pinned-header-bg', headerBg);
+      rootStyle.setProperty('--wc-pinned-taskbar-btn-bg', btnBg);
+    }
+  }
+
+  static _applyPinnedHeaderColorFromSetting() {
+    try {
+      const value = game?.settings?.get('window-controls', 'pinnedHeaderColor');
+      if (typeof value === 'string') WindowControls._setPinnedHeaderColor(value);
+    } catch (e) {
+      // Ignore (e.g. before game/settings available).
+    }
+  }
+
   static _applyTaskbarColorFromSetting() {
     try {
       const value = game?.settings?.get('window-controls', 'taskbarColor');
@@ -1511,7 +1581,7 @@ class WindowControls {
     moduleRoot.find('.wc-settings-header').remove();
 
     const taskbarKeys = ['organizedMinimize', 'minimizeButton', 'clickOutsideMinimize', 'taskbarColor', 'taskbarScrollbarColor'];
-    const pinningKeys = ['pinnedButton', 'pinnedDoubleTapping', 'rememberPinnedWindows'];
+    const pinningKeys = ['pinnedButton', 'pinnedHeaderColor', 'pinnedDoubleTapping', 'rememberPinnedWindows'];
 
     const taskbarHeader = $('<h3 class="wc-settings-header">Taskbar</h3>');
     const pinningHeader = $('<h3 class="wc-settings-header">Pinning</h3>');
@@ -1532,6 +1602,7 @@ class WindowControls {
     // Enhance color settings with a color picker control.
     WindowControls._enhanceColorPickerSetting($html, 'taskbarColor');
     WindowControls._enhanceColorPickerSetting($html, 'taskbarScrollbarColor');
+    WindowControls._enhanceColorPickerSetting($html, 'pinnedHeaderColor');
   }
 
   static _enhanceColorPickerSetting($html, key) {
@@ -1611,7 +1682,7 @@ Hooks.once('ready', () => {
     rootStyle.setProperty('--wcshadowcolor', game.settings.get('minimal-ui', 'shadowColor'));
     rootStyle.setProperty('--wcshadowstrength', game.settings.get('minimal-ui', 'shadowStrength') + 'px');
   } else {
-    rootStyle.setProperty('--wcbordercolor', '#ff71003b');
+    rootStyle.setProperty('--wcbordercolor', '#ff730048');
   }
 
   // Ensure taskbar section exists in taskbar mode.
@@ -1620,6 +1691,7 @@ Hooks.once('ready', () => {
   // Apply taskbar visual settings after DOM is ready.
   WindowControls._applyTaskbarColorFromSetting();
   WindowControls._applyTaskbarScrollbarColorFromSetting();
+  WindowControls._applyPinnedHeaderColorFromSetting();
 
 
 })

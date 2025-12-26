@@ -20,6 +20,8 @@
 
     "WindowControls.PinnedButtonName": "ピン留めボタン",
     "WindowControls.PinnedButtonHint": "ウィンドウにピン留めボタンを追加します。ピンされたウィンドウは閉じることが不可能になり最小化のみできます。",
+    "WindowControls.PinnedHeaderColorName": "ピン留めヘッダー色",
+    "WindowControls.PinnedHeaderColorHint": "ピン留めされたウィンドウヘッダーの基本色（不透明度は常に25%）。タスクバーのピン留めボタンは20%暗い不透明色になります。",
     "WindowControls.PinnedDoubleTappingName": "ESCキー2回でピン留めされたすべてのウィンドウを最小化",
     "WindowControls.PinnedDoubleTappingHint": "ピン留めされているウィンドウはESCキーを2回押したときにのみ最小化されます（従来はESCキー1回ですべてを閉じます）。",
     "WindowControls.RememberPinnedName": "ピン留め記憶",

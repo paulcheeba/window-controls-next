@@ -20,6 +20,8 @@
 
   "WindowControls.PinnedButtonName": "Gepinnt Knopf",
   "WindowControls.PinnedButtonHint": "Einen 'angepinnt' Knopf den Fenstern hínzufügen. Wenn geklickt, werden Fenster nie geschlossen sondern minimiert.",
+  "WindowControls.PinnedHeaderColorName": "Farbe angepinnter Titelbalken",
+  "WindowControls.PinnedHeaderColorHint": "Grundfarbe für angepinnte Fenstertitel (immer 25% Deckkraft). Angepinnte Taskbar-Buttons nutzen eine 20% dunklere, deckende Farbe.",
   "WindowControls.PinnedDoubleTappingName": "Doppeltes 'ESC'-Tippen, um angepinnte Fenster zu minimieren",
   "WindowControls.PinnedDoubleTappingHint": "Fenster, die derzeit angepinnt sind, werden beim Drücken von 'ESC' nicht minimiert, es sei denn, es wird zweimal gedrückt.",
   "WindowControls.RememberPinnedName": "Angepinnte Fenster merken",

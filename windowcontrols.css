@@ -12,6 +12,10 @@
     --minimaxh: unset;
     --taskbarcolor: #0000;
     --wc-taskbar-height: 40px;
+
+    /* Pinned styling: user chooses base color; header is forced to 25% alpha; taskbar pinned button is 20% darker with no alpha */
+    --wc-pinned-header-bg: rgba(255, 136, 0, 0.25);
+    --wc-pinned-taskbar-btn-bg: rgb(204, 109, 0);
 }
 
 #minimized-bar {
@@ -41,6 +45,8 @@
     align-items: center;
     padding: 0 6px;
     box-sizing: border-box;
+    background-image: linear-gradient(45deg, transparent 49%, #000000 49%, #000000 51%, transparent 51%), linear-gradient(-45deg, transparent 49%, #000000 49%, #000000 51%, transparent 51%);
+    background-size: 4px 4px;
 }
 
 /* Taskbar buttons scroll container (horizontal), with scrollbar hidden */
@@ -132,7 +138,7 @@ body.wc-taskbar-bottom {
 }
 
 #window-controls-persistent .wc-taskbar-btn.pinned {
-    background-color: var(--wcbordercolor);
+    background-color: var(--wc-pinned-taskbar-btn-bg);
 }
 
 #window-controls-persistent .wc-taskbar-btn .wc-taskbar-label {
@@ -217,7 +223,7 @@ input[type="color"].wc-color-picker::-moz-color-swatch {
 }
 
 .minimized-pinned {
-    background-color: var(--wcbordercolor);
+    background-color: var(--wc-pinned-header-bg);
     border-radius: 5px 5px 0 0;
 }
 
