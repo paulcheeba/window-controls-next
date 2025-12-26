@@ -1,18 +1,13 @@
 {
 	"id": "window-controls-next",
-	"title": "Window Controls",
-	"author": "JeansenVaars#2857",
+	"title": "Window Controls Next",
+	"author": "paulcheeba",
 	"authors": [
 		{
-			"name": "Saif Addin Ellafi",
-			"discord": "JeansenVaars#2857",
-			"ko-fi": "https://ko-fi.com/jeansenvaars"
-		}
+			"name": "paulcheeba"		}
 	],
-	"description": "Improves minimized window organization, adds taskbar minimize, and pin window buttons",
+	"description": "Window Taskbar and Window Buttons: Minimize and Pin floating Windows to a top or bottom taskbar. Updated for Foundry VTT v13+.",
 	"version": "13.1.0.0",
-	"minimumCoreVersion": "13",
-	"compatibleCoreVersion": "13.999",
 	"compatibility": {
 		"minimum": "13",
 		"verified": "13.351",
