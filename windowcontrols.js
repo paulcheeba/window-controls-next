@@ -43,6 +43,58 @@ class WindowControls {
     }
   }
 
+  static async _migrateLegacySettingsIfNeeded() {
+    try {
+      // If the legacy module is active, assume the user wants to keep them separate.
+      if (game?.modules?.get?.(WindowControls.LEGACY_MODULE_ID)?.active) return;
+
+      const entries = [
+        { key: 'organizedMinimize', scope: 'client' },
+        { key: 'minimizeButton', scope: 'world' },
+        { key: 'pinnedButton', scope: 'world' },
+        { key: 'clickOutsideMinimize', scope: 'world' },
+        { key: 'pinnedDoubleTapping', scope: 'world' },
+        { key: 'rememberPinnedWindows', scope: 'world' },
+        { key: 'pinnedHeaderColor', scope: 'world' },
+        { key: 'taskbarColor', scope: 'world' },
+        { key: 'taskbarScrollbarColor', scope: 'world' },
+      ];
+
+      const storage = game?.settings?.storage;
+      if (!storage) return;
+
+      for (const { key, scope } of entries) {
+        const store = storage.get?.(scope);
+        if (!store?.get) continue;
+
+        const legacyStoreKey = `${WindowControls.LEGACY_MODULE_ID}.${key}`;
+        const newStoreKey = `${WindowControls.MODULE_ID}.${key}`;
+
+        // Only migrate if the legacy key exists and the new key is not already stored.
+        const hasNew = typeof store.has === 'function' ? store.has(newStoreKey) : false;
+        if (hasNew) {
+          // Optionally clean up legacy key if it still exists.
+          if (typeof store.delete === 'function') store.delete(legacyStoreKey);
+          continue;
+        }
+
+        const legacyValue = store.get(legacyStoreKey);
+        if (legacyValue === undefined) continue;
+
+        try {
+          await game.settings.set(WindowControls.MODULE_ID, key, legacyValue);
+        } catch (e) {
+          // If we can't set (unexpected value/type), skip.
+          continue;
+        }
+
+        if (typeof store.delete === 'function') store.delete(legacyStoreKey);
+      }
+    } catch (e) {
+      // Best-effort migration only.
+    }
+  }
+
   // Hover preview (taskbar buttons)
   static _TASKBAR_HOVER_PREVIEW_DELAY_MS = 1000;
 
@@ -1360,6 +1412,7 @@ class WindowControls {
 
     Hooks.once('ready', async function () {
 
+      await WindowControls._migrateLegacySettingsIfNeeded();
       await WindowControls._migrateLegacyPinnedFlagIfNeeded();
 
       // Apply saved taskbar color on startup (settings onChange does not run on load).
