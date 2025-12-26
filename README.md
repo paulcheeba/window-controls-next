@@ -1,4 +1,7 @@
-![GitHub all releases](https://img.shields.io/github/downloads/paulcheeba/foundryvtt-window-controls/total?logo=GitHub) ![GitHub release (latest by date)](https://img.shields.io/github/downloads/paulcheeba/foundryvtt-window-controls/latest/total) ![GitHub release (latest by date)](https://img.shields.io/github/v/release/paulcheeba/foundryvtt-window-controls) ![GitHub issues](https://img.shields.io/github/issues-raw/paulcheeba/foundryvtt-window-controls) ![GitHub](https://img.shields.io/github/license/paulcheeba/foundryvtt-window-controls)
+[![Foundry VTT Version](https://img.shields.io/badge/Foundry%20VTT-v13+-blue)](https://foundryvtt.com/)
+[![Latest Release](https://img.shields.io/github/v/release/paulcheeba/window-controls-next)](https://github.com/paulcheeba/window-controls-next/releases/latest)
+[![Downloads (All Time)](https://img.shields.io/github/downloads/paulcheeba/window-controls-next/total)](https://github.com/paulcheeba/window-controls-next/releases)
+[![Downloads (Latest)](https://img.shields.io/github/downloads/paulcheeba/window-controls-next/latest/total)](https://github.com/paulcheeba/window-controls-next/releases/latest)
 
 # Window Controls (Foundry VTT v13)
 

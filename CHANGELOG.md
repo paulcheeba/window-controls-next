@@ -1,263 +1,390 @@
-### 13.1.0.0
-* Enhancement: New "Pinned Header Color" setting (with color picker)
-* Enhancement: Pinned window header overlay uses the selected color at 25% opacity
-* Enhancement: Pinned taskbar buttons use a 20% darker solid color derived from the pinned header color
-
-> Note: The 13.x versions are the reworked Foundry VTT v13+ fork/modernization of the original module.
-
-### 13.0.1.2
-* Enhancement: Taskbar buttons can be scrolled horizontally when they overflow
-* Enhancement: Thin horizontal scrollbar under taskbar buttons
-* Enhancement: New setting for taskbar scrollbar thumb color (with color picker)
-
-### 13.0.1.1
-* Bugfix: Remember pinned windows restore idempotently (won't accidentally unpin on reload)
-* Removed: Maximize button and setting
-* Enhancement: Settings reorganized into "Taskbar" and "Pinning" sections
-* Bugfix: Settings organizer supports both jQuery and raw HTMLElement hook args
-* Bugfix: Taskbar color applies on startup (not only after changing the setting)
-* Enhancement: Taskbar color setting now includes a built-in style color picker
-
-### 13.0.0.1
-* Compatibility: Foundry V13 support
-* Enhancement: Taskbar is docked above/below the UI (cannot be covered), and the Foundry viewport/canvas is resized to make room
-* Enhancement: Taskbar-only minimize is instant (hide/show without Foundry's native minimize animation)
-* Enhancement: Taskbar buttons show tooltip and support hover-preview
-* Enhancement: Pinned windows can be remembered across sessions via Document UUID
-* Bugfix: Prevent duplicate sheet windows for the same Document UUID
-* Behavior: Window Controls only applies to Document sheets (no sidebar directories/popouts)
+# Changelog
 
-### 1.12.0
-* Compatibility: Foundry V12 support
+All notable changes to this project will be documented in this file.
 
-### 1.11.5
-* Bugfix: Fixed placement of Camera Views with Taskbar mode
+The format is based on Keep a Changelog, and this project aims to follow Semantic Versioning.
 
-### 1.11.4
-* Bugfix: Fixed placement in canvas with taskbar
+Note: The 13.x versions are the reworked Foundry VTT v13+ fork/modernization of the original module.
 
-### 1.11.3
-* Bugfix: Fixed placement in canvas with taskbar
-* Compatibility: Fixed Tokenizer window
+## [13.1.0.0]
+### Added
+- New "Pinned Header Color" setting (with color picker)
 
-### 1.11.1
-* Compatibility: Fixed module metadata
+### Changed
+- Pinned window header overlay uses the selected color at 25% opacity
+- Pinned taskbar buttons use a 20% darker solid color derived from the pinned header color
 
-### 1.11.0
-* Compatibility: Foundry V11 support
+## [13.0.1.2]
+### Added
+- Taskbar buttons can be scrolled horizontally when they overflow
+- Thin horizontal scrollbar under taskbar buttons
+- New setting for taskbar scrollbar thumb color (with color picker)
 
-### 1.10.0
-* Compatibility: Foundry V10 support
+## [13.0.1.1]
+### Changed
+- Settings reorganized into "Taskbar" and "Pinning" sections
+- Taskbar color setting now includes a built-in style color picker
 
-### 1.9.8
-* Reintroduce: Click outside to minimize all windows, does not include pinned windows
+### Fixed
+- Remember pinned windows restore idempotently (won't accidentally unpin on reload)
+- Settings organizer supports both jQuery and raw HTMLElement hook args
+- Taskbar color applies on startup (not only after changing the setting)
 
-### 1.9.7
-* Compatibility: Support PDFoundry when restoring open windows enabled on session start
-* Enhancement: Simple click on Taskbar mode now maximizes clicked window
-* Bugfix: Corrected some issues in the behavior of minimize/restore header buttons
-
-### 1.9.6
-* Rollback: Click outside to minimize all windows, includes pinned windows too again
-
-### 1.9.5
-* Bugfix: Minimize on click outside won't minimize anything if any token is active
-* Compatibility: Minimize on click outside won't minimize dialogs
-
-### 1.9.4
-* Enhancement: Minimize on click outside won't minimize pinned windows
-* Compatibility: Minimize on click outside won't minimize 'Destiny Tracker' From StarWarsFFG
-
-### 1.9.3
-* Enhancement: Simplified logic for locking window movement
-* Bugfix: Fixed Forien Quest window not moving (Thanks XtraButtery)
-* Bugfix: Fixed some issues in window movements lock when reopening (Thanks roguedevjake)
-
-### 1.9.2
-* Compatibility: PDFoundry now works well with bar modes
-* Bugfix: Limited height of windows when using Taskbar modes
-* Bugfix: Resolved problem with Bottom Taskbar when browser size changes
-
-### 1.9.1
-* Localization: Japanese thanks to Brother Sharp
-* Bugfix: Fixed minimum and maximum window heights when using Taskbar mode
+### Removed
+- Maximize button and setting
 
-### 1.9.0
-* Enhancement: New setting 'Bottom Taskbar' allows for bottom dedicated area for open windows. Feedback welcome!
+## [13.0.0.1]
+### Added
+- Taskbar is docked above/below the UI (cannot be covered), and the Foundry viewport/canvas is resized to make room
+- Taskbar-only minimize is instant (hide/show without Foundry's native minimize animation)
+- Taskbar buttons show tooltip and support hover-preview
+- Pinned windows can be remembered across sessions via Document UUID
 
-### 1.8.1
-* Defaults: Reverted to some more conservative defaults for "Click Outside" and "Remember Pinned Windows" to be disabled
-
-### 1.8.0
-* Enhancement: New setting 'Minimize Everything on Outside Click', enabled by default
-* Enhancement: 'Remember Pinned Windows' will now also remember sidebar tabs (floating chat, playlists, etc)
-* Bugfix: Fixed a bug where minimized windows could be moved out of the bar
-
-### 1.7.8
-* Bugfix: Fixed an issue with remember pinned windows on startup where some events did not trigger in some system actors
-* Bugfix: Fixed an issue where minimizing a window too fast, would disable the minimize button
-* Bugfix: Added color to pinned icon to make it clear the window pinned
-* Bugfix: Shifted default colors to users without Minimal UI to be softer
-
-### 1.7.7
-* Compatibility: Taskbar mode support for: Monk's Enhanced Journal, SoundBoard by Blitz, Simple Calendar, Inline WebViewer, Forien's Quest Log
+### Changed
+- Foundry V13 support
+- Window Controls only applies to Document sheets (no sidebar directories/popouts)
 
-### 1.7.6
-* Compatibility: OneJournal and Monk's Enhanced Journal
-
-### 1.7.5
-* Bugfix: Fixed an issue with the right sidebar margins in relation to taskbar mode
-* Build: Support for Foundry V9 as a major release
-
-### 1.7.4
-* Bugfix: Use libwrapper to reposition windows rather than innerHeight
-
-### 1.7.3
-* Bugfix: Better support for multiple screen resolution sizes with Taskbar mode
+### Fixed
+- Prevent duplicate sheet windows for the same Document UUID
 
-### 1.7.2
-* Bugfix: Organized Minimize is now a setting per user and not global (i.e. per client)
+# Below is the existing changelog for the changes made before Paulcheeba took over maintenance of the module.
 
-### 1.7.1
-* Bugfix: Top Taskbar mode corrected an issue in calculation of unsupported windows minimization
-* Bugfix: Top Taskbar mode limited height of minimum height for settings
+## [1.12.0]
+### Changed
+- Foundry V12 support
 
-### 1.7.0
-* Enhancement: New Organized Minimize Mode "Taskbar Top" fixes a taskbar on top of all canvas for minimized windows (Check screenshot!)
-* Deprecation: Persistent modes now deprecated in favor of Tasbkar mode. Earlier persistent mode did not give the experience I hoped for.
+## [1.11.5]
+### Fixed
+- Fixed placement of Camera Views with Taskbar mode
 
-Feedback is welcome and consider a ko-fi!
+## [1.11.4]
+### Fixed
+- Fixed placement in canvas with taskbar
 
-### 1.6.3
-* Compatibility: Forien's Quest Log V9+
+## [1.11.3]
+### Changed
+- Fixed Tokenizer window
 
-### 1.6.2
-* Enhancement: Adjust Top bar positioning alongside Minimal UI Logo and Navigation settings
+### Fixed
+- Fixed placement in canvas with taskbar
 
-### 1.6.1
-* Bugfix: Fixed a specific bug when restoring loaded windows that cannot be opened again
-* Bugfix: Rolled back some risky decisions in favor of compatibility over functionality
+## [1.11.1]
+### Changed
+- Fixed module metadata
 
-### 1.6.0
-* Enhancement: Persistent Window mode will now work universally (Can detect module apps like Fate Utilities, Inline WebViewer, FXMaster, etc.)
-* Enhancement: Persistent Mode of Windows will now minimize "non-important" windows into the bar as well, as opposed to leave them floating
-* Compatibility: PopOut! support improved
-* Default: Setting Persisted TopBar mode is now the default (Risky in terms of compatibility, but I give my vote of confidence!)
-* Default: Setting remember pinned windows is now set by default (I like it and use it!)
+## [1.11.0]
+### Changed
+- Foundry V11 support
 
-### 1.5.3
-* Bugfix: Fixed a bug where some modules might trigger some ghost windows that trick Window Controls and thus throwing an error (Thank you Casanova for helping find it)
+## [1.10.0]
+### Changed
+- Foundry V10 support
 
-### 1.5.2
-* Bugfix: Fixed a bug when combining persisted mode and remember pinned windows, where closing them would not be remembered
+## [1.9.8]
+### Added
+- Click outside to minimize all windows, does not include pinned windows
 
-### 1.5.1
-* Enhancement: Remember Pinned Windows will now also remember position and size of windows (at the time of getting pinned)
-* Enhancement: Remember Pinned Windows will start minimized
-* Bugfix: Fixed wrong rounded corners in pinned windows
-* Bugfix: Fixed pinned mode not setting up correctly in persisted loaded windows
-* Bugfix: Fixed a certain situation where minimizing windows would not work after unpinning them
-* Compatibility: Inline WebViewer window application now counts for persisted bar mode
+## [1.9.7]
+### Added
+- Simple click on Taskbar mode now maximizes clicked window
 
-### 1.5.0
-* Enhancement: New Feature (experimental, disabled by default) remembers the pinned windows for next sessions!
-* Compatibility: GM Screen entries should no longer spawn persistent window tabs
-* Bugfix: Fixed a specific situation when unpinning and closing very fast caused in a minimize because of double clicking recognition
+### Changed
+- Support PDFoundry when restoring open windows enabled on session start
 
-### 1.4.1
-* Enhancement: Added Roll Tables to supported window types for Persistent Mode
-* Bugfix: Minor style adjustments for the horizontal bar
+### Fixed
+- Corrected some issues in the behavior of minimize/restore header buttons
 
-### 1.4.0
-* Enhancement: V9 Support and Internal code quality improvements (thanks to the community for the help!)
-* Bugfix: Fixed a specific situation when double clicking on minimize would double minimize
+## [1.9.6]
+### Changed
+- Click outside to minimize all windows, includes pinned windows too again
 
-### 1.3.5
-* Bugfix: Small pixel position tweak in the positioning of bottom bar
+## [1.9.5]
+### Changed
+- Minimize on click outside won't minimize dialogs
 
-### 1.3.4
-* Compatibility: Make better use of space with Minimal UI
+### Fixed
+- Minimize on click outside won't minimize anything if any token is active
+
+## [1.9.4]
+### Added
+- Minimize on click outside won't minimize pinned windows
+
+### Changed
+- Minimize on click outside won't minimize 'Destiny Tracker' From StarWarsFFG
+
+## [1.9.3]
+### Changed
+- Simplified logic for locking window movement
+
+### Fixed
+- Fixed Forien Quest window not moving (Thanks XtraButtery)
+- Fixed some issues in window movements lock when reopening (Thanks roguedevjake)
+
+## [1.9.2]
+### Changed
+- PDFoundry now works well with bar modes
+
+### Fixed
+- Limited height of windows when using Taskbar modes
+- Resolved problem with Bottom Taskbar when browser size changes
+
+## [1.9.1]
+### Added
+- Japanese localization (thanks to Brother Sharp)
+
+### Fixed
+- Fixed minimum and maximum window heights when using Taskbar mode
+
+## [1.9.0]
+### Added
+- New setting 'Bottom Taskbar' allows for bottom dedicated area for open windows
+
+## [1.8.1]
+### Changed
+- Reverted to some more conservative defaults for "Click Outside" and "Remember Pinned Windows" to be disabled
+
+## [1.8.0]
+### Added
+- New setting 'Minimize Everything on Outside Click', enabled by default
+- 'Remember Pinned Windows' will now also remember sidebar tabs (floating chat, playlists, etc)
+
+### Fixed
+- Fixed a bug where minimized windows could be moved out of the bar
+
+## [1.7.8]
+### Fixed
+- Fixed an issue with remember pinned windows on startup where some events did not trigger in some system actors
+- Fixed an issue where minimizing a window too fast, would disable the minimize button
+- Added color to pinned icon to make it clear the window pinned
+- Shifted default colors to users without Minimal UI to be softer
+
+## [1.7.7]
+### Changed
+- Taskbar mode support for: Monk's Enhanced Journal, SoundBoard by Blitz, Simple Calendar, Inline WebViewer, Forien's Quest Log
+
+## [1.7.6]
+### Changed
+- OneJournal and Monk's Enhanced Journal compatibility
 
-### 1.3.3
-* Bugfix: Restored an accidentally deleted bugfix for minimized windows appearing below navigation context menus
+## [1.7.5]
+### Changed
+- Support for Foundry V9 as a major release
 
-### 1.3.2
-* Enhancement: Color markings when persistent mode windows are already open
+### Fixed
+- Fixed an issue with the right sidebar margins in relation to taskbar mode
+
+## [1.7.4]
+### Fixed
+- Use libwrapper to reposition windows rather than innerHeight
+
+## [1.7.3]
+### Fixed
+- Better support for multiple screen resolution sizes with Taskbar mode
+
+## [1.7.2]
+### Fixed
+- Organized Minimize is now a setting per user and not global (i.e. per client)
+
+## [1.7.1]
+### Fixed
+- Top Taskbar mode corrected an issue in calculation of unsupported windows minimization
+- Top Taskbar mode limited height of minimum height for settings
 
-### 1.3.1
-* Enhancement: Persistent mode windows will be brought to top on click in the bar
-* Enhancement: Ironed out animations all over the module (Feedback welcome)
-* Enhancement: Persistent mode windows show a minimize button when open and can toggle
-* Bugfix: Fixed a bug where windows closed with ESC wouldn't remember the original position afterwards
-* Bugfix: Fixed a bug where closing left side windows on the bar would move maximized windows of the right
-* Bugfix: Fixed a bug with bottom located windows were not being restored correctly after minimized
-* Bugfix: Fixed a bug where closed windows from the bar would not remember correctly the windows length
-
-### 1.3.0
-* Enhancement: Organized Minimize windows will auto adjust their positions when closing other windows
-* Enhancement: Pinned windows will no longer minimize on `ESC`. Double Tapping `ESC` will do instead. Configurable in Settings
-* Enhancement: Organized Minimize windows will be smarter when looking for an empty space in the panel
-* Enhancement: Added smoother animations to Organized Minimized in any of the "Bar" modes
-* Bugfix: Overflow minimized windows will no longer go to the panel positions, instead they will be minimized in place
-* Bugfix: Improved overall stability by simplification of logic
-
-### 1.2.5
-* Bugfix: Fixed Bar cleanup with unsupported modules or applications
-* Bugfix: Fixed persistent mode bug when opening duplicated tokens
-* Localization: Thank you, @Grayhead for improving German Language and Settings configuration!
-
-### 1.2.4
-* Bugfix: Fixed journal switching between text and images also broken in 1.2.3
-
-### 1.2.3
-* Bugfix: Fixed Journal switching between text and images broken in 1.2.2
-* Bugfix: Fixed persistent mode when updating names of open windows
-
-### 1.2.2
-* Bugfix: Improved stability after ugly code cleanup
-
-### 1.2.1
-* Bugfix: Fixed an issue caused by Windows with non-letter characters in Persistent BAR mode to disappear
-
-### 1.2.0
-* Enhancement: When using Organized Minimize with BAR, minimized or persisted Windows CANNOT be moved (Unless overflowed).This will prevent accidental moves. If undesired, use modes without a BAR. This was very requested by the community :-)
-
-### 1.1.8
-* Localization: Thank you @Grayhead for adding German language to Window Controls!
-
-### 1.1.7
-* Bugfix: Fixed missing language localizations of previous build
-
-### 1.1.6
-* Bugfix: Fixed ghost tabs appearing when changing scenes in persistent mode setting
-
-### 1.1.5
-* Bugfix: Fixed a situation where the persistent mode bar would not disappear after closing last open window
-
-### 1.1.4
-* Bugfix: Tweaked some race condition parameters for better stability
-
-### 1.1.3
-* Bugfix: Fixed pinned handouts not staying pinned after changing from text to image
-
-### 1.1.2
-* Enhancement: Replaced [Token] from minimized Windows to shorten header titles
-* Enhancement: Window Pin button enabled by default because I think it is cool
-* Bugfix: Fixed a bug preventing the bar from disappearing in some situations
-* Bugfix: Fixed a bug where windows would not correctly restore to their proper size
-* Bugfix: Fixed a bug where pressing Escape to all Windows did not clean the interface properly
-* Bugfix: Fixed a bug where closing minimized windows threw an error in some situations
-* Bugfix: Reduced code redundancies
-
-### 1.1.1
-* Bugfix: Fixed context menu priority in Scene right click when top bar is used (Thanks @Grayhead)
-* Bugfix: Improved compatibility between pinned windows and windows that might close themselves (i.e. image-text journals) (Thanks @Grayhead)
-
-### 1.1.0
-* Feature: New Persistent Bar mode where open windows are also visible in the Panel (Experimental!!!)
-
-### 1.0.2
-* Bugfix: Fixed windows restoring to a wrong size when exceeding taskbar width
+## [1.7.0]
+### Added
+- New Organized Minimize Mode "Taskbar Top" fixes a taskbar on top of all canvas for minimized windows
+
+### Changed
+- Persistent modes now deprecated in favor of Taskbar mode
+
+## [1.6.3]
+### Changed
+- Forien's Quest Log V9+ compatibility
+
+## [1.6.2]
+### Changed
+- Adjust Top bar positioning alongside Minimal UI Logo and Navigation settings
+
+## [1.6.1]
+### Fixed
+- Fixed a specific bug when restoring loaded windows that cannot be opened again
+- Rolled back some risky decisions in favor of compatibility over functionality
+
+## [1.6.0]
+### Added
+- Persistent Window mode will now work universally (can detect module apps like Fate Utilities, Inline WebViewer, FXMaster, etc.)
+
+### Changed
+- Persistent Mode of Windows will now minimize "non-important" windows into the bar as well, as opposed to leave them floating
+- PopOut! support improved
+- Setting Persisted TopBar mode is now the default
+- Setting remember pinned windows is now set by default
+
+## [1.5.3]
+### Fixed
+- Fixed a bug where some modules might trigger some ghost windows that trick Window Controls and thus throwing an error (Thank you Casanova for helping find it)
+
+## [1.5.2]
+### Fixed
+- Fixed a bug when combining persisted mode and remember pinned windows, where closing them would not be remembered
+
+## [1.5.1]
+### Added
+- Remember Pinned Windows will now also remember position and size of windows (at the time of getting pinned)
+- Remember Pinned Windows will start minimized
+
+### Changed
+- Inline WebViewer window application now counts for persisted bar mode
+
+### Fixed
+- Fixed wrong rounded corners in pinned windows
+- Fixed pinned mode not setting up correctly in persisted loaded windows
+- Fixed a certain situation where minimizing windows would not work after unpinning them
+
+## [1.5.0]
+### Added
+- New feature (experimental, disabled by default) remembers the pinned windows for next sessions
+
+### Changed
+- GM Screen entries should no longer spawn persistent window tabs
+
+### Fixed
+- Fixed a specific situation where unpinning and closing very fast caused in a minimize because of double clicking recognition
+
+## [1.4.1]
+### Added
+- Added Roll Tables to supported window types for Persistent Mode
+
+### Fixed
+- Minor style adjustments for the horizontal bar
+
+## [1.4.0]
+### Added
+- V9 support and internal code quality improvements (thanks to the community for the help)
+
+### Fixed
+- Fixed a specific situation where double clicking on minimize would double minimize
+
+## [1.3.5]
+### Fixed
+- Small pixel position tweak in the positioning of bottom bar
+
+## [1.3.4]
+### Changed
+- Make better use of space with Minimal UI
+
+## [1.3.3]
+### Fixed
+- Restored an accidentally deleted bugfix for minimized windows appearing below navigation context menus
+
+## [1.3.2]
+### Added
+- Color markings when persistent mode windows are already open
+
+## [1.3.1]
+### Added
+- Persistent mode windows will be brought to top on click in the bar
+- Persistent mode windows show a minimize button when open and can toggle
+
+### Changed
+- Ironed out animations all over the module
+
+### Fixed
+- Fixed a bug where windows closed with ESC wouldn't remember the original position afterwards
+- Fixed a bug where closing left side windows on the bar would move maximized windows of the right
+- Fixed a bug with bottom located windows were not being restored correctly after minimized
+- Fixed a bug where closed windows from the bar would not remember correctly the windows length
+
+## [1.3.0]
+### Added
+- Organized Minimize windows will auto adjust their positions when closing other windows
+- Pinned windows will no longer minimize on ESC; double tapping ESC will do instead (configurable in Settings)
+- Organized Minimize windows will be smarter when looking for an empty space in the panel
+- Added smoother animations to Organized Minimized in any of the "Bar" modes
+
+### Fixed
+- Overflow minimized windows will no longer go to the panel positions, instead they will be minimized in place
+- Improved overall stability by simplification of logic
+
+## [1.2.5]
+### Added
+- German language and Settings configuration improvements (thanks to @Grayhead)
+
+### Fixed
+- Fixed Bar cleanup with unsupported modules or applications
+- Fixed persistent mode bug when opening duplicated tokens
+
+## [1.2.4]
+### Fixed
+- Fixed journal switching between text and images also broken in 1.2.3
+
+## [1.2.3]
+### Fixed
+- Fixed Journal switching between text and images broken in 1.2.2
+- Fixed persistent mode when updating names of open windows
+
+## [1.2.2]
+### Fixed
+- Improved stability after ugly code cleanup
+
+## [1.2.1]
+### Fixed
+- Fixed an issue caused by Windows with non-letter characters in Persistent BAR mode to disappear
+
+## [1.2.0]
+### Changed
+- When using Organized Minimize with BAR, minimized or persisted Windows cannot be moved (unless overflowed)
+
+## [1.1.8]
+### Added
+- German language (thanks to @Grayhead)
+
+## [1.1.7]
+### Fixed
+- Fixed missing language localizations of previous build
+
+## [1.1.6]
+### Fixed
+- Fixed ghost tabs appearing when changing scenes in persistent mode setting
+
+## [1.1.5]
+### Fixed
+- Fixed a situation where the persistent mode bar would not disappear after closing last open window
+
+## [1.1.4]
+### Fixed
+- Tweaked some race condition parameters for better stability
+
+## [1.1.3]
+### Fixed
+- Fixed pinned handouts not staying pinned after changing from text to image
+
+## [1.1.2]
+### Added
+- Replaced [Token] from minimized Windows to shorten header titles
+
+### Changed
+- Window Pin button enabled by default
+
+### Fixed
+- Fixed a bug preventing the bar from disappearing in some situations
+- Fixed a bug where windows would not correctly restore to their proper size
+- Fixed a bug where pressing Escape to all Windows did not clean the interface properly
+- Fixed a bug where closing minimized windows threw an error in some situations
+- Reduced code redundancies
+
+## [1.1.1]
+### Fixed
+- Fixed context menu priority in Scene right click when top bar is used (Thanks @Grayhead)
+- Improved compatibility between pinned windows and windows that might close themselves (i.e. image-text journals) (Thanks @Grayhead)
+
+## [1.1.0]
+### Added
+- New Persistent Bar mode where open windows are also visible in the Panel (experimental)
+
+## [1.0.2]
+### Fixed
+- Fixed windows restoring to a wrong size when exceeding taskbar width
 
 ### 1.0.1
 * Compatibility: Changing multiple settings now works fine with 0.8.3+
