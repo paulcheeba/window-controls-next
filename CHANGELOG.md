@@ -6,6 +6,18 @@ The format is based on Keep a Changelog, and this project aims to follow Semanti
 
 Note: The 13.x versions are the reworked Foundry VTT v13+ fork/modernization of the original module.
 
+## [13.1.0.2]
+### Added
+- Optional debug logging toggle for troubleshooting
+
+### Changed
+- Taskbar background is now 80% transparent
+- Taskbar background is click-through (taskbar buttons remain clickable)
+
+### Fixed
+- Taskbar background color now respects transparency (no longer forced opaque by inline styles)
+- Releasing a dragged window behind the taskbar no longer traps the window under it
+
 ## [13.1.0.1]
 ### Fixed
 - Clicking a taskbar button while the window is hover-previewed now properly restores the window (instead of behaving like a preview/temporary state)
