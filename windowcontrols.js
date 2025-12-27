@@ -129,14 +129,18 @@ class WindowControls {
       // Only the primary button should initiate a drag track.
       if (typeof event.button === 'number' && event.button !== 0) return;
 
-      // Only track real window drags (header/title grab).
-      const header = target.closest('.window-header, header.window-header');
-      const title = target.closest('.window-title, h4.window-title');
-      const headerLike = header || title;
-      if (!headerLike) return;
-
-      const win = headerLike.closest('.app.window-app, .window-app, .app');
+      // Identify the Foundry window element.
+      // Most Application windows have data-appid and class window-app.
+      const win = target.closest('.window-app, .app.window-app, [data-appid]');
       if (!(win instanceof HTMLElement)) return;
+
+      // Only consider clicks within the header zone (avoid tracking content clicks).
+      const clientY = typeof event.clientY === 'number' ? event.clientY : null;
+      if (clientY != null) {
+        const rect = win.getBoundingClientRect();
+        const headerZonePx = 64;
+        if (clientY > rect.top + headerZonePx) return;
+      }
 
       draggingWindowEl = win;
       // Reset state so the first contact/clear during this drag is reported.
