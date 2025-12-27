@@ -32,6 +32,31 @@ class WindowControls {
   static _barrierWatcherInstalled = false;
   static _barrierEnforcerInstalled = false;
 
+  static _loggedStartup = false;
+  static _lastLoggedTaskbarState = null;
+
+  static _logAlways(...args) {
+    try {
+      console.log('Window Controls Next |', ...args);
+    } catch { /* ignore */ }
+  }
+
+  static _getModuleVersion() {
+    try {
+      const mod = game?.modules?.get?.(WindowControls.MODULE_ID);
+      return mod?.version ?? mod?.data?.version ?? null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  static _getTaskbarStateLabel(setting) {
+    if (!WindowControls._isTaskbarMode(setting)) return 'off';
+    if (setting === 'persistentTop') return 'top';
+    if (setting === 'persistentBottom') return 'bottom';
+    return 'on';
+  }
+
   static _isDebugLoggingEnabled() {
     try {
       return game?.settings?.get(WindowControls.MODULE_ID, 'debugLogging') === true;
@@ -51,13 +76,158 @@ class WindowControls {
 
   static _debug(...args) {
     if (!WindowControls._isDebugLoggingEnabled()) return;
-    // Use console.warn so it shows up even when Info logs are hidden.
-    console.warn('Window Controls Next |', ...args);
+    console.log('Window Controls Next |', ...args);
   }
 
   static _debugVerbose(...args) {
     if (!WindowControls._isVerboseDebugLoggingEnabled()) return;
-    console.log('Window Controls Next |', ...args);
+    console.debug('Window Controls Next |', ...args);
+  }
+
+  static _debugDockLayoutSnapshot(phase, setting) {
+    if (!WindowControls._isDebugLoggingEnabled()) return;
+    try {
+      const bar = document.getElementById('window-controls-persistent');
+      const iface = document.getElementById('interface');
+      const board = document.getElementById('board');
+
+      const cs = (el) => (el instanceof HTMLElement ? getComputedStyle(el) : null);
+      const rect = (el) => {
+        if (!(el instanceof HTMLElement)) return null;
+        const r = el.getBoundingClientRect();
+        return {
+          top: Math.round(r.top),
+          bottom: Math.round(r.bottom),
+          left: Math.round(r.left),
+          right: Math.round(r.right),
+          width: Math.round(r.width),
+          height: Math.round(r.height),
+        };
+      };
+
+      const barCS = cs(bar);
+      const ifaceCS = cs(iface);
+      const boardCS = cs(board);
+
+      const root = document.documentElement;
+      const rootStyle = root ? getComputedStyle(root) : null;
+      const wcHeight = rootStyle?.getPropertyValue('--wc-taskbar-height')?.trim() ?? null;
+
+      const body = document.body;
+      const wcBodyClasses = body
+        ? Array.from(body.classList).filter((c) => c === 'wc-taskbar-top' || c === 'wc-taskbar-bottom')
+        : [];
+
+      const snapshot = {
+        phase,
+        setting,
+        body: {
+          wcClasses: wcBodyClasses,
+          hasTop: body?.classList?.contains('wc-taskbar-top') === true,
+          hasBottom: body?.classList?.contains('wc-taskbar-bottom') === true,
+        },
+        cssVar: {
+          wcTaskbarHeight: wcHeight,
+        },
+        elements: {
+          taskbar: {
+            exists: bar instanceof HTMLElement,
+            display: bar instanceof HTMLElement ? getComputedStyle(bar).display : null,
+            position: bar instanceof HTMLElement ? getComputedStyle(bar).position : null,
+            top: barCS?.top ?? null,
+            bottom: barCS?.bottom ?? null,
+            height: barCS?.height ?? null,
+            rect: rect(bar),
+          },
+          interface: {
+            exists: iface instanceof HTMLElement,
+            position: ifaceCS?.position ?? null,
+            top: ifaceCS?.top ?? null,
+            bottom: ifaceCS?.bottom ?? null,
+            height: ifaceCS?.height ?? null,
+            rect: rect(iface),
+            inlineTop: iface instanceof HTMLElement ? (iface.style.top || null) : null,
+            inlineBottom: iface instanceof HTMLElement ? (iface.style.bottom || null) : null,
+          },
+          board: {
+            exists: board instanceof HTMLElement,
+            position: boardCS?.position ?? null,
+            top: boardCS?.top ?? null,
+            bottom: boardCS?.bottom ?? null,
+            height: boardCS?.height ?? null,
+            rect: rect(board),
+            inlineTop: board instanceof HTMLElement ? (board.style.top || null) : null,
+            inlineBottom: board instanceof HTMLElement ? (board.style.bottom || null) : null,
+          }
+        }
+      };
+
+      // Capture-friendly summary (object expansion is often lost in copied warning logs).
+      const summary = [
+        `phase=${String(phase)}`,
+        `setting=${String(setting)}`,
+        `classes=${wcBodyClasses.join(',') || 'none'}`,
+        `--wc-taskbar-height=${wcHeight ?? 'null'}`,
+        `taskbar(pos=${barCS?.position ?? 'null'} top=${barCS?.top ?? 'null'} bottom=${barCS?.bottom ?? 'null'} h=${barCS?.height ?? 'null'})`,
+        `interface(pos=${ifaceCS?.position ?? 'null'} top=${ifaceCS?.top ?? 'null'} bottom=${ifaceCS?.bottom ?? 'null'} h=${ifaceCS?.height ?? 'null'} inlineTop=${iface instanceof HTMLElement ? (iface.style.top || '""') : 'null'} inlineBottom=${iface instanceof HTMLElement ? (iface.style.bottom || '""') : 'null'})`,
+        `board(pos=${boardCS?.position ?? 'null'} top=${boardCS?.top ?? 'null'} bottom=${boardCS?.bottom ?? 'null'} h=${boardCS?.height ?? 'null'} inlineTop=${board instanceof HTMLElement ? (board.style.top || '""') : 'null'} inlineBottom=${board instanceof HTMLElement ? (board.style.bottom || '""') : 'null'})`,
+      ].join(' | ');
+
+      WindowControls._debug('Dock layout summary', summary);
+
+      WindowControls._debug('Dock layout snapshot', snapshot);
+
+      if (!WindowControls._isVerboseDebugLoggingEnabled()) return;
+
+      WindowControls._debugVerbose('Dock layout computed styles', {
+        phase,
+        setting,
+        viewport: {
+          innerWidth: window.innerWidth,
+          innerHeight: window.innerHeight,
+          devicePixelRatio: window.devicePixelRatio,
+        },
+        taskbar: {
+          rect: rect(bar),
+          top: barCS?.top ?? null,
+          bottom: barCS?.bottom ?? null,
+          height: barCS?.height ?? null,
+          marginTop: barCS?.marginTop ?? null,
+          marginBottom: barCS?.marginBottom ?? null,
+          transform: barCS?.transform ?? null,
+          zIndex: barCS?.zIndex ?? null,
+        },
+        interface: {
+          rect: rect(iface),
+          position: ifaceCS?.position ?? null,
+          top: ifaceCS?.top ?? null,
+          bottom: ifaceCS?.bottom ?? null,
+          height: ifaceCS?.height ?? null,
+          paddingTop: ifaceCS?.paddingTop ?? null,
+          paddingBottom: ifaceCS?.paddingBottom ?? null,
+          marginTop: ifaceCS?.marginTop ?? null,
+          marginBottom: ifaceCS?.marginBottom ?? null,
+          transform: ifaceCS?.transform ?? null,
+        },
+        board: {
+          rect: rect(board),
+          position: boardCS?.position ?? null,
+          top: boardCS?.top ?? null,
+          bottom: boardCS?.bottom ?? null,
+          height: boardCS?.height ?? null,
+          paddingTop: boardCS?.paddingTop ?? null,
+          paddingBottom: boardCS?.paddingBottom ?? null,
+          marginTop: boardCS?.marginTop ?? null,
+          marginBottom: boardCS?.marginBottom ?? null,
+          transform: boardCS?.transform ?? null,
+        }
+      });
+    } catch (e) {
+      // Never let debug logging break the module.
+      try {
+        console.warn('Window Controls Next | Dock layout snapshot failed', e);
+      } catch { /* ignore */ }
+    }
   }
 
   static _installTaskbarBarrierWatcher() {
@@ -675,6 +845,17 @@ class WindowControls {
   static _applyTaskbarDockLayout() {
     const setting = WindowControls._getTaskbarSetting();
 
+    // Always-on, low-noise state log (only when it changes).
+    try {
+      const state = WindowControls._getTaskbarStateLabel(setting);
+      if (WindowControls._lastLoggedTaskbarState !== state) {
+        WindowControls._lastLoggedTaskbarState = state;
+        WindowControls._logAlways('Taskbar mode', state);
+      }
+    } catch { /* ignore */ }
+
+    WindowControls._debugDockLayoutSnapshot('before', setting);
+
     document.body.classList.remove('wc-taskbar-top', 'wc-taskbar-bottom');
 
     // Keep CSS variable in sync with our expected height.
@@ -686,6 +867,9 @@ class WindowControls {
       if (existing?.parentElement) existing.parentElement.removeChild(existing);
       // Kick Foundry layout/canvas to recompute sizes.
       window.dispatchEvent(new Event('resize'));
+
+      WindowControls._debugDockLayoutSnapshot('after-disable', setting);
+      requestAnimationFrame(() => WindowControls._debugDockLayoutSnapshot('after-disable-rAF', setting));
       return;
     }
 
@@ -693,8 +877,16 @@ class WindowControls {
     if (setting === 'persistentTop') document.body.classList.add('wc-taskbar-top');
     if (setting === 'persistentBottom') document.body.classList.add('wc-taskbar-bottom');
 
+    WindowControls._debugDockLayoutSnapshot('after-class', setting);
+
     // Kick Foundry layout/canvas to recompute sizes.
     window.dispatchEvent(new Event('resize'));
+
+    // Layout can settle across multiple frames (Foundry + theme modules).
+    requestAnimationFrame(() => {
+      WindowControls._debugDockLayoutSnapshot('after-resize-rAF1', setting);
+      requestAnimationFrame(() => WindowControls._debugDockLayoutSnapshot('after-resize-rAF2', setting));
+    });
   }
 
   static _getTaskbarEntry(app) {
@@ -1611,10 +1803,10 @@ class WindowControls {
       onChange: (enabled) => {
         // Always print a visible confirmation so users know the toggle is working.
         if (enabled === true) {
-          console.warn('Window Controls Next | Debug logging enabled.');
+          console.log('Window Controls Next | Debug logging enabled.');
           try { ui?.notifications?.info?.('Window Controls Next: Debug logging enabled'); } catch { /* ignore */ }
         } else {
-          console.warn('Window Controls Next | Debug logging disabled.');
+          console.log('Window Controls Next | Debug logging disabled.');
           try { ui?.notifications?.info?.('Window Controls Next: Debug logging disabled'); } catch { /* ignore */ }
         }
       }
@@ -2064,6 +2256,16 @@ Hooks.once('init', () => {
   if (WindowControls.externalMinimize) return;
   WindowControls.initSettings();
   WindowControls.initHooks();
+
+  // Always-on module startup log.
+  if (!WindowControls._loggedStartup) {
+    WindowControls._loggedStartup = true;
+    const version = WindowControls._getModuleVersion() ?? 'unknown';
+    const setting = WindowControls._getTaskbarSetting();
+    const state = WindowControls._getTaskbarStateLabel(setting);
+    WindowControls._lastLoggedTaskbarState = state;
+    WindowControls._logAlways(`Init v${version}`, `(taskbar: ${state})`);
+  }
 });
 
 Hooks.once('ready', () => {

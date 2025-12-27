@@ -6,6 +6,14 @@ The format is based on Keep a Changelog, and this project aims to follow Semanti
 
 Note: The 13.x versions are the reworked Foundry VTT v13+ fork/modernization of the original module.
 
+## [13.1.0.3]
+### Changed
+- Taskbar docking debug output no longer uses console warnings; adds minimal always-on startup/state logs (version + top/bottom/off)
+
+### Fixed
+- Persistent top/bottom taskbar now reliably reserves viewport height (prevents bottom clipping in top mode and UI overlap in bottom mode)
+- Switching between top and bottom taskbar no longer leaves the UI in a partially offset state
+
 ## [13.1.0.2]
 ### Added
 - Optional debug logging toggle for troubleshooting
@@ -15,7 +23,6 @@ Note: The 13.x versions are the reworked Foundry VTT v13+ fork/modernization of 
 - Taskbar background is click-through (taskbar buttons remain clickable)
 
 ### Fixed
-- Taskbar background color now respects transparency (no longer forced opaque by inline styles)
 - Releasing a dragged window behind the taskbar no longer traps the window under it
 
 ## [13.1.0.1]
