@@ -454,9 +454,25 @@ class WindowControls {
     app._minimized = true;
   }
 
+  static _getShortTaskbarTitle(fullTitle) {
+    const title = String(fullTitle ?? '').trim();
+    if (!title) return '';
+
+    // Common pattern for Document sheets: "Type: Name".
+    // Show only the "Name" portion on the taskbar (we already have an icon),
+    // while the full title remains available via the tooltip.
+    const colonIndex = title.lastIndexOf(':');
+    if (colonIndex > -1 && colonIndex < title.length - 1) {
+      const after = title.slice(colonIndex + 1).trim();
+      if (after) return after;
+    }
+
+    return title;
+  }
+
   static _getTaskbarButtonLabel(app) {
-    const title = (app?.title ?? app?.options?.title ?? app?.constructor?.name ?? 'Window');
-    const short = String(title).slice(0, 10);
+    const fullTitle = (app?.title ?? app?.options?.title ?? app?.constructor?.name ?? 'Window');
+    const short = WindowControls._getShortTaskbarTitle(fullTitle);
 
     const docName = app?.document?.documentName;
     const ctor = app?.constructor?.name ?? '';
@@ -514,6 +530,9 @@ class WindowControls {
         const targetApp = entry?.app;
         if (!targetApp) return;
 
+        const targetEl = WindowControls._getElement(targetApp);
+        const wasHoverPreview = entry?._wcPreviewing === true || targetEl?.dataset?.wcTaskbarPreview === '1';
+
         // If this button was previewing, stop preview tracking now.
         if (entry) {
           entry._wcPreviewing = false;
@@ -523,8 +542,14 @@ class WindowControls {
             clearTimeout(entry._wcHoverTimer);
             entry._wcHoverTimer = null;
           }
-          const el = WindowControls._getElement(targetApp);
-          if (el && el.dataset) delete el.dataset.wcTaskbarPreview;
+          if (targetEl && targetEl.dataset) delete targetEl.dataset.wcTaskbarPreview;
+        }
+
+        // If the window is currently shown only because of hover-preview, clicking should
+        // commit it to a real restored/open state (so mouseleave won't re-hide it).
+        if (wasHoverPreview) {
+          await WindowControls._restoreFromTaskbar(targetApp);
+          return;
         }
 
         // If hidden/minimized-to-taskbar: restore.
@@ -577,6 +602,9 @@ class WindowControls {
 
   static _restoreFromTaskbar(app) {
     WindowControls._showFromTaskbar(app);
+    // If this was previously shown via hover-preview, ensure it cannot be re-hidden by preview cleanup.
+    const el = WindowControls._getElement(app);
+    if (el && el.dataset) delete el.dataset.wcTaskbarPreview;
     const p = (async () => {
       WindowControls._bringToFront(app);
       WindowControls.setRestoredStyle(app);
