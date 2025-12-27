@@ -6,6 +6,13 @@ The format is based on Keep a Changelog, and this project aims to follow Semanti
 
 Note: The 13.x versions are the reworked Foundry VTT v13+ fork/modernization of the original module.
 
+## [13.1.0.1]
+### Fixed
+- Clicking a taskbar button while the window is hover-previewed now properly restores the window (instead of behaving like a preview/temporary state)
+
+### Changed
+- Taskbar button labels are shorter (tooltip still shows the full window title)
+
 ## [13.1.0.0]
 ### Added
 - New "Pinned Header Color" setting (with color picker)
