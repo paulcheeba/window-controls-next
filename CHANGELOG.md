@@ -6,6 +6,10 @@ The format is based on Keep a Changelog, and this project aims to follow Semanti
 
 Note: The 13.x versions are the reworked Foundry VTT v13+ fork/modernization of the original module.
 
+## [13.1.0.4]
+### Fixed
+- Windows minimized to the taskbar are no longer force-unhidden on render (fixes some sheets reappearing after reload)
+
 ## [13.1.0.3]
 ### Changed
 - Taskbar docking debug output no longer uses console warnings; adds minimal always-on startup/state logs (version + top/bottom/off)
