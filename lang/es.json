@@ -39,4 +39,7 @@
   ,"WindowControls.TaskbarScrollbarColorName": "Color de la barra de desplazamiento"
   ,"WindowControls.TaskbarScrollbarColorHint": "Color del control de la barra de desplazamiento horizontal de la barra de tareas. Déjalo en blanco para usar el tema."
 
+  ,"WindowControls.DebugLoggingName": "<b>Enable Debugging:</b>"
+  ,"WindowControls.DebugLoggingHint": "Enable comprehensive debugging logs."
+
 }

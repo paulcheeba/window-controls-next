@@ -29,6 +29,38 @@ class WindowControls {
 
   static _patches = new Map();
 
+  static _isDebugLoggingEnabled() {
+    try {
+      return game?.settings?.get(WindowControls.MODULE_ID, 'debugLogging') === true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  static _debug(...args) {
+    if (!WindowControls._isDebugLoggingEnabled()) return;
+    // Use console.debug so users can filter easily in DevTools.
+    console.debug('Window Controls Next |', ...args);
+  }
+
+  static _debugDescribeApp(app) {
+    try {
+      const ctor = app?.constructor?.name ?? 'App';
+      const title = (typeof app?.title === 'string' && app.title.length) ? app.title : (app?.id ?? '');
+      const uuid = app?.uuid ?? WindowControls._getAppDocumentUuid(app) ?? null;
+      return {
+        ctor,
+        id: app?.id ?? null,
+        appId: app?.appId ?? null,
+        uuid,
+        title,
+        minimized: WindowControls._isMinimized(app),
+      };
+    } catch (e) {
+      return { ctor: 'App' };
+    }
+  }
+
   static _wrapMethod({ target, method, wrapper, name }) {
     const original = target?.[method];
     if (typeof original !== 'function') return;
@@ -1316,6 +1348,20 @@ class WindowControls {
       }
     });
 
+    game.settings.register(WindowControls.MODULE_ID, 'debugLogging', {
+      name: game.i18n.localize('WindowControls.DebugLoggingName'),
+      hint: game.i18n.localize('WindowControls.DebugLoggingHint'),
+      scope: 'client',
+      config: true,
+      type: Boolean,
+      default: false,
+      onChange: (enabled) => {
+        if (enabled === true) {
+          WindowControls._debug('Debug logging enabled.');
+        }
+      }
+    });
+
   }
 
   static initHooks() {
@@ -1403,6 +1449,47 @@ class WindowControls {
           name: 'ApplicationV2.prototype'
         });
       };
+
+      // Debugging instrumentation (gated behind the Debug Logging setting).
+      // Goal: identify which methods fire during drag/position updates for sheets.
+      const shouldDebugApp = (app) => {
+        if (!WindowControls._isDebugLoggingEnabled()) return false;
+        if (WindowControls._shouldIgnoreApp(app)) return false;
+        // Focus debug output on Document-backed sheets.
+        return WindowControls._isTargetSheet(app);
+      };
+
+      const debugWrap = (wrapFn, method) => {
+        wrapFn(method, function (wrapped, ...args) {
+          if (shouldDebugApp(this)) {
+            const first = args?.[0];
+            const pos = (first && typeof first === 'object') ? first : undefined;
+            WindowControls._debug(method, WindowControls._debugDescribeApp(this), pos ?? first ?? null);
+          }
+          return wrapped(...args);
+        });
+      };
+
+      // Positioning hooks.
+      debugWrap(wrapAppV1, 'setPosition');
+      debugWrap(wrapAppV2, 'setPosition');
+
+      // Common drag handler names (Foundry versions/themes may differ; wrappers no-op if missing).
+      for (const m of ['_onDragMouseDown', '_onDragMouseMove', '_onDragMouseUp', '_onDragStart', '_onDragMove', '_onDragDrop', '_onDragEnd']) {
+        debugWrap(wrapAppV1, m);
+        debugWrap(wrapAppV2, m);
+      }
+
+      if (WindowControls._isDebugLoggingEnabled()) {
+        WindowControls._debug('Ready hook: debug logging active.', {
+          organizedMinimize: migrated,
+          viewport: { w: window.innerWidth, h: window.innerHeight },
+          taskbar: {
+            el: !!document.getElementById('window-controls-persistent'),
+            computedHeight: document.getElementById('window-controls-persistent')?.getBoundingClientRect?.().height ?? null,
+          }
+        });
+      }
 
       if (WindowControls._isTaskbarMode(settingOrganized)) {
         wrapAppV1('minimize', function (wrapped, ...args) {
@@ -1610,7 +1697,7 @@ class WindowControls {
     // Remove previous injected headers if SettingsConfig re-renders.
     moduleRoot.find('.wc-settings-header').remove();
 
-    const taskbarKeys = ['organizedMinimize', 'minimizeButton', 'clickOutsideMinimize', 'taskbarColor', 'taskbarScrollbarColor'];
+    const taskbarKeys = ['organizedMinimize', 'minimizeButton', 'clickOutsideMinimize', 'taskbarColor', 'taskbarScrollbarColor', 'debugLogging'];
     const pinningKeys = ['pinnedButton', 'pinnedHeaderColor', 'pinnedDoubleTapping', 'rememberPinnedWindows'];
 
     const taskbarHeader = $('<h3 class="wc-settings-header">Taskbar</h3>');

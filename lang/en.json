@@ -46,6 +46,9 @@
   "WindowControls.TaskbarHoverPreviewEnabledName": "Taskbar Hover Preview",
   "WindowControls.TaskbarHoverPreviewEnabledHint": "Hover over a taskbar button to temporarily preview the hidden window.",
   "WindowControls.TaskbarHoverPreviewDelayName": "Hover Preview Delay (ms)",
-  "WindowControls.TaskbarHoverPreviewDelayHint": "Delay in milliseconds before the preview shows while hovering."
+  "WindowControls.TaskbarHoverPreviewDelayHint": "Delay in milliseconds before the preview shows while hovering.",
+
+  "WindowControls.DebugLoggingName": "<b>Enable Debugging:</b>",
+  "WindowControls.DebugLoggingHint": "Enable comprehensive debugging logs."
 
 }
