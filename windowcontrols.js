@@ -126,16 +126,26 @@ class WindowControls {
       const target = event.target;
       if (!(target instanceof Element)) return;
 
-      // Only track real window drags (header grab).
-      const header = target.closest('.window-header, header.window-header');
-      if (!header) return;
+      // Only the primary button should initiate a drag track.
+      if (typeof event.button === 'number' && event.button !== 0) return;
 
-      const win = header.closest('.app.window-app, .window-app, .app');
+      // Only track real window drags (header/title grab).
+      const header = target.closest('.window-header, header.window-header');
+      const title = target.closest('.window-title, h4.window-title');
+      const headerLike = header || title;
+      if (!headerLike) return;
+
+      const win = headerLike.closest('.app.window-app, .window-app, .app');
       if (!(win instanceof HTMLElement)) return;
 
       draggingWindowEl = win;
       // Reset state so the first contact/clear during this drag is reported.
       stateByWindowEl.delete(draggingWindowEl);
+
+      WindowControls._debug('Barrier watch: tracking drag', {
+        title: getWindowTitle(draggingWindowEl),
+        id: draggingWindowEl.id || null
+      });
       check();
     };
 
@@ -148,13 +158,23 @@ class WindowControls {
       if (!draggingWindowEl) return;
       // One last check on release.
       check();
+
+      WindowControls._debug('Barrier watch: drag end', {
+        title: getWindowTitle(draggingWindowEl),
+        id: draggingWindowEl.id || null
+      });
       draggingWindowEl = null;
     };
 
+    // Pointer events preferred; mouse events included as fallback.
     document.addEventListener('pointerdown', onPointerDown, true);
     document.addEventListener('pointermove', onPointerMove, true);
     document.addEventListener('pointerup', onPointerUp, true);
     document.addEventListener('pointercancel', onPointerUp, true);
+
+    document.addEventListener('mousedown', onPointerDown, true);
+    document.addEventListener('mousemove', onPointerMove, true);
+    document.addEventListener('mouseup', onPointerUp, true);
   }
 
   static _debugDescribeApp(app) {
