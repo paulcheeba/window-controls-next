@@ -30,6 +30,7 @@ class WindowControls {
   static _patches = new Map();
 
   static _barrierWatcherInstalled = false;
+  static _barrierEnforcerInstalled = false;
 
   static _isDebugLoggingEnabled() {
     try {
@@ -179,6 +180,120 @@ class WindowControls {
     document.addEventListener('mousedown', onPointerDown, true);
     document.addEventListener('mousemove', onPointerMove, true);
     document.addEventListener('mouseup', onPointerUp, true);
+  }
+
+  static _getTaskbarBarrierInfo() {
+    const bar = document.getElementById('window-controls-persistent');
+    if (!(bar instanceof HTMLElement)) return null;
+    if (getComputedStyle(bar).display === 'none') return null;
+
+    const rect = bar.getBoundingClientRect();
+    if (!rect.width || !rect.height) return null;
+
+    const distTop = Math.abs(rect.top);
+    const distBottom = Math.abs(window.innerHeight - rect.bottom);
+    const side = distTop <= distBottom ? 'top' : 'bottom';
+    return { rect, side, marginPx: 2 };
+  }
+
+  static _getAppHTMLElement(app) {
+    const el = app?.element ?? app?._element;
+    if (el instanceof HTMLElement) return el;
+    if (Array.isArray(el) && el[0] instanceof HTMLElement) return el[0];
+    if (el?.jquery && el[0] instanceof HTMLElement) return el[0];
+    return null;
+  }
+
+  static _clampAppAgainstTaskbarBarrier(app, barrier) {
+    if (!app || !barrier) return false;
+    if (WindowControls._shouldIgnoreApp(app)) return false;
+    if (!WindowControls._isTargetSheet(app)) return false;
+    if (WindowControls._isHiddenToTaskbar(app) || WindowControls._isMinimized(app)) return false;
+
+    const el = WindowControls._getAppHTMLElement(app);
+    if (!(el instanceof HTMLElement)) return false;
+    if (getComputedStyle(el).display === 'none') return false;
+
+    const winRect = el.getBoundingClientRect();
+    const height = winRect.height;
+    if (!height) return false;
+
+    const { rect: barRect, side, marginPx } = barrier;
+    const topBarrierY = barRect.bottom + marginPx;
+    const bottomBarrierY = barRect.top - marginPx;
+
+    // Determine current top in pixels (prefer app.position.top).
+    let currentTop = Number.isFinite(app?.position?.top) ? app.position.top : null;
+    if (currentTop == null) {
+      const rawTop = el.style?.top;
+      if (typeof rawTop === 'string' && rawTop.endsWith('px')) {
+        const parsed = Number.parseFloat(rawTop);
+        if (Number.isFinite(parsed)) currentTop = parsed;
+      }
+    }
+    if (currentTop == null) return false;
+
+    let newTop = currentTop;
+    if (side === 'top') {
+      // If the window's header is under the taskbar, push it down.
+      if (winRect.top < topBarrierY) {
+        newTop = currentTop + (topBarrierY - winRect.top);
+      }
+    } else {
+      // If the window's bottom is under the taskbar, push it up.
+      if (winRect.bottom > bottomBarrierY) {
+        newTop = currentTop - (winRect.bottom - bottomBarrierY);
+      }
+    }
+
+    if (!Number.isFinite(newTop) || Math.round(newTop) === Math.round(currentTop)) return false;
+
+    // Apply via Foundry when possible; fall back to direct style.
+    try {
+      if (typeof app.setPosition === 'function') {
+        app.setPosition({ top: newTop });
+      } else {
+        el.style.top = `${Math.round(newTop)}px`;
+      }
+    } catch {
+      el.style.top = `${Math.round(newTop)}px`;
+    }
+
+    WindowControls._debug('Barrier enforce: nudged window', {
+      app: WindowControls._debugDescribeApp(app),
+      side,
+      from: Math.round(currentTop),
+      to: Math.round(newTop),
+      taskbar: { top: Math.round(barRect.top), bottom: Math.round(barRect.bottom), h: Math.round(barRect.height) }
+    });
+
+    return true;
+  }
+
+  static _enforceAllWindowsAgainstTaskbarBarrier() {
+    const barrier = WindowControls._getTaskbarBarrierInfo();
+    if (!barrier) return;
+
+    const windows = Object.values(ui?.windows ?? {});
+    for (const app of windows) {
+      WindowControls._clampAppAgainstTaskbarBarrier(app, barrier);
+    }
+  }
+
+  static _installTaskbarBarrierEnforcer() {
+    if (WindowControls._barrierEnforcerInstalled) return;
+    WindowControls._barrierEnforcerInstalled = true;
+
+    const onRelease = () => {
+      // Only act when debug is enabled OR when taskbar exists.
+      // We always enforce (safety fix), but keep logs behind debug.
+      WindowControls._enforceAllWindowsAgainstTaskbarBarrier();
+    };
+
+    document.addEventListener('pointerup', onRelease, true);
+    document.addEventListener('pointercancel', onRelease, true);
+    document.addEventListener('mouseup', onRelease, true);
+    window.addEventListener('blur', onRelease, true);
   }
 
   static _debugDescribeApp(app) {
@@ -1595,6 +1710,8 @@ class WindowControls {
       // Debugging: default mode logs only when a dragged window hits/clears the taskbar barrier.
       // Very noisy internal method tracing is behind the separate Verbose Debug Logs toggle.
       WindowControls._installTaskbarBarrierWatcher();
+      // Safety: prevent releasing windows behind the taskbar (independent of drag hook detection).
+      WindowControls._installTaskbarBarrierEnforcer();
 
       const shouldVerboseDebugApp = (app) => {
         if (!WindowControls._isVerboseDebugLoggingEnabled()) return false;
