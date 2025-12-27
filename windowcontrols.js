@@ -1841,7 +1841,7 @@ class WindowControls {
 
       // Safety: don't permanently hide windows across refresh unless we know why.
       const key = WindowControls._getAppKey(app);
-      if (element?.style?.display === 'none' && (!key || !WindowControls._taskbarEntries.has(String(key)))) {
+      if (element?.style?.display === 'none' && element?.dataset?.wcTaskbarHidden !== '1' && (!key || !WindowControls._taskbarEntries.has(String(key)))) {
         element.style.display = '';
       }
 
@@ -1857,7 +1857,7 @@ class WindowControls {
       void WindowControls._enforceSingleInstanceByPersistentId(app);
 
       const key = WindowControls._getAppKey(app);
-      if (el.style.display === 'none' && (!key || !WindowControls._taskbarEntries.has(String(key)))) {
+      if (el.style.display === 'none' && el?.dataset?.wcTaskbarHidden !== '1' && (!key || !WindowControls._taskbarEntries.has(String(key)))) {
         el.style.display = '';
       }
 
