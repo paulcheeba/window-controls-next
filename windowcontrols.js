@@ -39,8 +39,8 @@ class WindowControls {
 
   static _debug(...args) {
     if (!WindowControls._isDebugLoggingEnabled()) return;
-    // Use console.debug so users can filter easily in DevTools.
-    console.debug('Window Controls Next |', ...args);
+    // Use console.log because console.debug is often hidden by default.
+    console.log('Window Controls Next |', ...args);
   }
 
   static _debugDescribeApp(app) {
@@ -1356,9 +1356,9 @@ class WindowControls {
       type: Boolean,
       default: false,
       onChange: (enabled) => {
-        if (enabled === true) {
-          WindowControls._debug('Debug logging enabled.');
-        }
+        // Always print a visible confirmation so users know the toggle is working.
+        if (enabled === true) console.log('Window Controls Next | Debug logging enabled.');
+        else console.log('Window Controls Next | Debug logging disabled.');
       }
     });
 
@@ -1420,16 +1420,6 @@ class WindowControls {
       WindowControls._applyTaskbarScrollbarColorFromSetting();
       WindowControls._applyPinnedHeaderColorFromSetting();
 
-      // Migrate legacy Organized Minimize values to taskbar modes.
-      const current = game.settings.get(WindowControls.MODULE_ID, 'organizedMinimize');
-      const migrated = WindowControls._getTaskbarSetting();
-      if (current !== migrated) {
-        await game.settings.set(WindowControls.MODULE_ID, 'organizedMinimize', migrated);
-        return;
-      }
-
-      const settingOrganized = migrated;
-
       const wrapAppV1 = (method, fn) => {
         return WindowControls._wrapMethod({
           target: Application.prototype,
@@ -1490,6 +1480,16 @@ class WindowControls {
           }
         });
       }
+
+      // Migrate legacy Organized Minimize values to taskbar modes.
+      const current = game.settings.get(WindowControls.MODULE_ID, 'organizedMinimize');
+      const migrated = WindowControls._getTaskbarSetting();
+      if (current !== migrated) {
+        await game.settings.set(WindowControls.MODULE_ID, 'organizedMinimize', migrated);
+        return;
+      }
+
+      const settingOrganized = migrated;
 
       if (WindowControls._isTaskbarMode(settingOrganized)) {
         wrapAppV1('minimize', function (wrapped, ...args) {
