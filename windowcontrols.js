@@ -50,8 +50,8 @@ class WindowControls {
 
   static _debug(...args) {
     if (!WindowControls._isDebugLoggingEnabled()) return;
-    // Use console.log because console.debug is often hidden by default.
-    console.log('Window Controls Next |', ...args);
+    // Use console.warn so it shows up even when Info logs are hidden.
+    console.warn('Window Controls Next |', ...args);
   }
 
   static _debugVerbose(...args) {
@@ -1491,8 +1491,13 @@ class WindowControls {
       default: false,
       onChange: (enabled) => {
         // Always print a visible confirmation so users know the toggle is working.
-        if (enabled === true) console.log('Window Controls Next | Debug logging enabled.');
-        else console.log('Window Controls Next | Debug logging disabled.');
+        if (enabled === true) {
+          console.warn('Window Controls Next | Debug logging enabled.');
+          try { ui?.notifications?.info?.('Window Controls Next: Debug logging enabled'); } catch { /* ignore */ }
+        } else {
+          console.warn('Window Controls Next | Debug logging disabled.');
+          try { ui?.notifications?.info?.('Window Controls Next: Debug logging disabled'); } catch { /* ignore */ }
+        }
       }
     });
 
