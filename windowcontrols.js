@@ -29,6 +29,291 @@ class WindowControls {
 
   static _patches = new Map();
 
+  static _barrierWatcherInstalled = false;
+  static _barrierEnforcerInstalled = false;
+
+  static _isDebugLoggingEnabled() {
+    try {
+      return game?.settings?.get(WindowControls.MODULE_ID, 'debugLogging') === true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  static _isVerboseDebugLoggingEnabled() {
+    try {
+      if (!WindowControls._isDebugLoggingEnabled()) return false;
+      return game?.settings?.get(WindowControls.MODULE_ID, 'debugVerbose') === true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  static _debug(...args) {
+    if (!WindowControls._isDebugLoggingEnabled()) return;
+    // Use console.warn so it shows up even when Info logs are hidden.
+    console.warn('Window Controls Next |', ...args);
+  }
+
+  static _debugVerbose(...args) {
+    if (!WindowControls._isVerboseDebugLoggingEnabled()) return;
+    console.log('Window Controls Next |', ...args);
+  }
+
+  static _installTaskbarBarrierWatcher() {
+    if (WindowControls._barrierWatcherInstalled) return;
+    WindowControls._barrierWatcherInstalled = true;
+
+    const marginPx = 2;
+    const stateByWindowEl = new WeakMap();
+    let draggingWindowEl = null;
+
+    const getTaskbarRect = () => {
+      const bar = document.getElementById('window-controls-persistent');
+      if (!(bar instanceof HTMLElement)) return null;
+      const rect = bar.getBoundingClientRect();
+      if (!rect.width || !rect.height) return null;
+      // If the bar is hidden due to disabled taskbar mode, don't log.
+      if (getComputedStyle(bar).display === 'none') return null;
+      return rect;
+    };
+
+    const getWindowTitle = (el) => {
+      try {
+        const titleEl = el.querySelector('.window-title, h4.window-title, header .window-title');
+        const title = titleEl?.textContent?.trim();
+        if (title) return title;
+      } catch { /* ignore */ }
+      return el.id || 'window';
+    };
+
+    const isTaskbarTop = (barRect) => {
+      const distTop = Math.abs(barRect.top);
+      const distBottom = Math.abs(window.innerHeight - barRect.bottom);
+      return distTop <= distBottom;
+    };
+
+    const check = () => {
+      if (!WindowControls._isDebugLoggingEnabled()) return;
+      if (!(draggingWindowEl instanceof HTMLElement)) return;
+
+      const barRect = getTaskbarRect();
+      if (!barRect) return;
+
+      const winRect = draggingWindowEl.getBoundingClientRect();
+      const top = isTaskbarTop(barRect);
+      const violating = top
+        ? (winRect.top < (barRect.bottom + marginPx))
+        : (winRect.bottom > (barRect.top - marginPx));
+
+      const prev = stateByWindowEl.get(draggingWindowEl) === true;
+      if (violating === prev) return;
+
+      stateByWindowEl.set(draggingWindowEl, violating);
+      WindowControls._debug(
+        `Taskbar barrier ${violating ? 'CONTACT' : 'clear'}`,
+        {
+          side: top ? 'top' : 'bottom',
+          title: getWindowTitle(draggingWindowEl),
+          window: { top: Math.round(winRect.top), bottom: Math.round(winRect.bottom), height: Math.round(winRect.height) },
+          taskbar: { top: Math.round(barRect.top), bottom: Math.round(barRect.bottom), height: Math.round(barRect.height) },
+          marginPx
+        }
+      );
+    };
+
+    const onPointerDown = (event) => {
+      if (!WindowControls._isDebugLoggingEnabled()) return;
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+
+      // Only the primary button should initiate a drag track.
+      if (typeof event.button === 'number' && event.button !== 0) return;
+
+      // Identify the Foundry window element.
+      // Most Application windows have data-appid and class window-app.
+      const win = target.closest('.window-app, .app.window-app, [data-appid]');
+      if (!(win instanceof HTMLElement)) return;
+
+      // Only consider clicks within the header zone (avoid tracking content clicks).
+      const clientY = typeof event.clientY === 'number' ? event.clientY : null;
+      if (clientY != null) {
+        const rect = win.getBoundingClientRect();
+        const headerZonePx = 64;
+        if (clientY > rect.top + headerZonePx) return;
+      }
+
+      draggingWindowEl = win;
+      // Reset state so the first contact/clear during this drag is reported.
+      stateByWindowEl.delete(draggingWindowEl);
+
+      WindowControls._debug('Barrier watch: tracking drag', {
+        title: getWindowTitle(draggingWindowEl),
+        id: draggingWindowEl.id || null
+      });
+      check();
+    };
+
+    const onPointerMove = () => {
+      if (!draggingWindowEl) return;
+      check();
+    };
+
+    const onPointerUp = () => {
+      if (!draggingWindowEl) return;
+      // One last check on release.
+      check();
+
+      WindowControls._debug('Barrier watch: drag end', {
+        title: getWindowTitle(draggingWindowEl),
+        id: draggingWindowEl.id || null
+      });
+      draggingWindowEl = null;
+    };
+
+    // Pointer events preferred; mouse events included as fallback.
+    document.addEventListener('pointerdown', onPointerDown, true);
+    document.addEventListener('pointermove', onPointerMove, true);
+    document.addEventListener('pointerup', onPointerUp, true);
+    document.addEventListener('pointercancel', onPointerUp, true);
+
+    document.addEventListener('mousedown', onPointerDown, true);
+    document.addEventListener('mousemove', onPointerMove, true);
+    document.addEventListener('mouseup', onPointerUp, true);
+  }
+
+  static _getTaskbarBarrierInfo() {
+    const bar = document.getElementById('window-controls-persistent');
+    if (!(bar instanceof HTMLElement)) return null;
+    if (getComputedStyle(bar).display === 'none') return null;
+
+    const rect = bar.getBoundingClientRect();
+    if (!rect.width || !rect.height) return null;
+
+    const distTop = Math.abs(rect.top);
+    const distBottom = Math.abs(window.innerHeight - rect.bottom);
+    const side = distTop <= distBottom ? 'top' : 'bottom';
+    return { rect, side, marginPx: 2 };
+  }
+
+  static _getAppHTMLElement(app) {
+    const el = app?.element ?? app?._element;
+    if (el instanceof HTMLElement) return el;
+    if (Array.isArray(el) && el[0] instanceof HTMLElement) return el[0];
+    if (el?.jquery && el[0] instanceof HTMLElement) return el[0];
+    return null;
+  }
+
+  static _clampAppAgainstTaskbarBarrier(app, barrier) {
+    if (!app || !barrier) return false;
+    if (WindowControls._shouldIgnoreApp(app)) return false;
+    if (!WindowControls._isTargetSheet(app)) return false;
+    if (WindowControls._isHiddenToTaskbar(app) || WindowControls._isMinimized(app)) return false;
+
+    const el = WindowControls._getAppHTMLElement(app);
+    if (!(el instanceof HTMLElement)) return false;
+    if (getComputedStyle(el).display === 'none') return false;
+
+    const winRect = el.getBoundingClientRect();
+    const height = winRect.height;
+    if (!height) return false;
+
+    const { rect: barRect, side, marginPx } = barrier;
+    const topBarrierY = barRect.bottom + marginPx;
+    const bottomBarrierY = barRect.top - marginPx;
+
+    // Determine current top in pixels (prefer app.position.top).
+    let currentTop = Number.isFinite(app?.position?.top) ? app.position.top : null;
+    if (currentTop == null) {
+      const rawTop = el.style?.top;
+      if (typeof rawTop === 'string' && rawTop.endsWith('px')) {
+        const parsed = Number.parseFloat(rawTop);
+        if (Number.isFinite(parsed)) currentTop = parsed;
+      }
+    }
+    if (currentTop == null) return false;
+
+    let newTop = currentTop;
+    if (side === 'top') {
+      // If the window's header is under the taskbar, push it down.
+      if (winRect.top < topBarrierY) {
+        newTop = currentTop + (topBarrierY - winRect.top);
+      }
+    } else {
+      // If the window's bottom is under the taskbar, push it up.
+      if (winRect.bottom > bottomBarrierY) {
+        newTop = currentTop - (winRect.bottom - bottomBarrierY);
+      }
+    }
+
+    if (!Number.isFinite(newTop) || Math.round(newTop) === Math.round(currentTop)) return false;
+
+    // Apply via Foundry when possible; fall back to direct style.
+    try {
+      if (typeof app.setPosition === 'function') {
+        app.setPosition({ top: newTop });
+      } else {
+        el.style.top = `${Math.round(newTop)}px`;
+      }
+    } catch {
+      el.style.top = `${Math.round(newTop)}px`;
+    }
+
+    WindowControls._debug('Barrier enforce: nudged window', {
+      app: WindowControls._debugDescribeApp(app),
+      side,
+      from: Math.round(currentTop),
+      to: Math.round(newTop),
+      taskbar: { top: Math.round(barRect.top), bottom: Math.round(barRect.bottom), h: Math.round(barRect.height) }
+    });
+
+    return true;
+  }
+
+  static _enforceAllWindowsAgainstTaskbarBarrier() {
+    const barrier = WindowControls._getTaskbarBarrierInfo();
+    if (!barrier) return;
+
+    const windows = Object.values(ui?.windows ?? {});
+    for (const app of windows) {
+      WindowControls._clampAppAgainstTaskbarBarrier(app, barrier);
+    }
+  }
+
+  static _installTaskbarBarrierEnforcer() {
+    if (WindowControls._barrierEnforcerInstalled) return;
+    WindowControls._barrierEnforcerInstalled = true;
+
+    const onRelease = () => {
+      // Only act when debug is enabled OR when taskbar exists.
+      // We always enforce (safety fix), but keep logs behind debug.
+      WindowControls._enforceAllWindowsAgainstTaskbarBarrier();
+    };
+
+    document.addEventListener('pointerup', onRelease, true);
+    document.addEventListener('pointercancel', onRelease, true);
+    document.addEventListener('mouseup', onRelease, true);
+    window.addEventListener('blur', onRelease, true);
+  }
+
+  static _debugDescribeApp(app) {
+    try {
+      const ctor = app?.constructor?.name ?? 'App';
+      const title = (typeof app?.title === 'string' && app.title.length) ? app.title : (app?.id ?? '');
+      const uuid = app?.uuid ?? WindowControls._getAppDocumentUuid(app) ?? null;
+      return {
+        ctor,
+        id: app?.id ?? null,
+        appId: app?.appId ?? null,
+        uuid,
+        title,
+        minimized: WindowControls._isMinimized(app),
+      };
+    } catch (e) {
+      return { ctor: 'App' };
+    }
+  }
+
   static _wrapMethod({ target, method, wrapper, name }) {
     const original = target?.[method];
     if (typeof original !== 'function') return;
@@ -454,9 +739,25 @@ class WindowControls {
     app._minimized = true;
   }
 
+  static _getShortTaskbarTitle(fullTitle) {
+    const title = String(fullTitle ?? '').trim();
+    if (!title) return '';
+
+    // Common pattern for Document sheets: "Type: Name".
+    // Show only the "Name" portion on the taskbar (we already have an icon),
+    // while the full title remains available via the tooltip.
+    const colonIndex = title.lastIndexOf(':');
+    if (colonIndex > -1 && colonIndex < title.length - 1) {
+      const after = title.slice(colonIndex + 1).trim();
+      if (after) return after;
+    }
+
+    return title;
+  }
+
   static _getTaskbarButtonLabel(app) {
-    const title = (app?.title ?? app?.options?.title ?? app?.constructor?.name ?? 'Window');
-    const short = String(title).slice(0, 10);
+    const fullTitle = (app?.title ?? app?.options?.title ?? app?.constructor?.name ?? 'Window');
+    const short = WindowControls._getShortTaskbarTitle(fullTitle);
 
     const docName = app?.document?.documentName;
     const ctor = app?.constructor?.name ?? '';
@@ -514,6 +815,9 @@ class WindowControls {
         const targetApp = entry?.app;
         if (!targetApp) return;
 
+        const targetEl = WindowControls._getElement(targetApp);
+        const wasHoverPreview = entry?._wcPreviewing === true || targetEl?.dataset?.wcTaskbarPreview === '1';
+
         // If this button was previewing, stop preview tracking now.
         if (entry) {
           entry._wcPreviewing = false;
@@ -523,8 +827,14 @@ class WindowControls {
             clearTimeout(entry._wcHoverTimer);
             entry._wcHoverTimer = null;
           }
-          const el = WindowControls._getElement(targetApp);
-          if (el && el.dataset) delete el.dataset.wcTaskbarPreview;
+          if (targetEl && targetEl.dataset) delete targetEl.dataset.wcTaskbarPreview;
+        }
+
+        // If the window is currently shown only because of hover-preview, clicking should
+        // commit it to a real restored/open state (so mouseleave won't re-hide it).
+        if (wasHoverPreview) {
+          await WindowControls._restoreFromTaskbar(targetApp);
+          return;
         }
 
         // If hidden/minimized-to-taskbar: restore.
@@ -577,6 +887,9 @@ class WindowControls {
 
   static _restoreFromTaskbar(app) {
     WindowControls._showFromTaskbar(app);
+    // If this was previously shown via hover-preview, ensure it cannot be re-hidden by preview cleanup.
+    const el = WindowControls._getElement(app);
+    if (el && el.dataset) delete el.dataset.wcTaskbarPreview;
     const p = (async () => {
       WindowControls._bringToFront(app);
       WindowControls.setRestoredStyle(app);
@@ -1288,6 +1601,34 @@ class WindowControls {
       }
     });
 
+    game.settings.register(WindowControls.MODULE_ID, 'debugLogging', {
+      name: game.i18n.localize('WindowControls.DebugLoggingName'),
+      hint: game.i18n.localize('WindowControls.DebugLoggingHint'),
+      scope: 'client',
+      config: true,
+      type: Boolean,
+      default: false,
+      onChange: (enabled) => {
+        // Always print a visible confirmation so users know the toggle is working.
+        if (enabled === true) {
+          console.warn('Window Controls Next | Debug logging enabled.');
+          try { ui?.notifications?.info?.('Window Controls Next: Debug logging enabled'); } catch { /* ignore */ }
+        } else {
+          console.warn('Window Controls Next | Debug logging disabled.');
+          try { ui?.notifications?.info?.('Window Controls Next: Debug logging disabled'); } catch { /* ignore */ }
+        }
+      }
+    });
+
+    game.settings.register(WindowControls.MODULE_ID, 'debugVerbose', {
+      name: game.i18n.localize('WindowControls.DebugVerboseName'),
+      hint: game.i18n.localize('WindowControls.DebugVerboseHint'),
+      scope: 'client',
+      config: true,
+      type: Boolean,
+      default: false
+    });
+
   }
 
   static initHooks() {
@@ -1346,16 +1687,6 @@ class WindowControls {
       WindowControls._applyTaskbarScrollbarColorFromSetting();
       WindowControls._applyPinnedHeaderColorFromSetting();
 
-      // Migrate legacy Organized Minimize values to taskbar modes.
-      const current = game.settings.get(WindowControls.MODULE_ID, 'organizedMinimize');
-      const migrated = WindowControls._getTaskbarSetting();
-      if (current !== migrated) {
-        await game.settings.set(WindowControls.MODULE_ID, 'organizedMinimize', migrated);
-        return;
-      }
-
-      const settingOrganized = migrated;
-
       const wrapAppV1 = (method, fn) => {
         return WindowControls._wrapMethod({
           target: Application.prototype,
@@ -1375,6 +1706,54 @@ class WindowControls {
           name: 'ApplicationV2.prototype'
         });
       };
+
+      // Debugging: default mode logs only when a dragged window hits/clears the taskbar barrier.
+      // Very noisy internal method tracing is behind the separate Verbose Debug Logs toggle.
+      WindowControls._installTaskbarBarrierWatcher();
+      // Safety: prevent releasing windows behind the taskbar (independent of drag hook detection).
+      WindowControls._installTaskbarBarrierEnforcer();
+
+      const shouldVerboseDebugApp = (app) => {
+        if (!WindowControls._isVerboseDebugLoggingEnabled()) return false;
+        if (WindowControls._shouldIgnoreApp(app)) return false;
+        return WindowControls._isTargetSheet(app);
+      };
+
+      const verboseWrap = (wrapFn, method) => {
+        wrapFn(method, function (wrapped, ...args) {
+          if (shouldVerboseDebugApp(this)) {
+            const first = args?.[0];
+            const pos = (first && typeof first === 'object') ? first : undefined;
+            WindowControls._debugVerbose(method, WindowControls._debugDescribeApp(this), pos ?? first ?? null);
+          }
+          return wrapped(...args);
+        });
+      };
+
+      // Positioning hooks (verbose only).
+      verboseWrap(wrapAppV1, 'setPosition');
+      verboseWrap(wrapAppV2, 'setPosition');
+
+      if (WindowControls._isDebugLoggingEnabled()) {
+        WindowControls._debug('Debug logging active (barrier contact mode).', {
+          verbose: WindowControls._isVerboseDebugLoggingEnabled(),
+          viewport: { w: window.innerWidth, h: window.innerHeight },
+          taskbar: {
+            el: !!document.getElementById('window-controls-persistent'),
+            computedHeight: document.getElementById('window-controls-persistent')?.getBoundingClientRect?.().height ?? null,
+          }
+        });
+      }
+
+      // Migrate legacy Organized Minimize values to taskbar modes.
+      const current = game.settings.get(WindowControls.MODULE_ID, 'organizedMinimize');
+      const migrated = WindowControls._getTaskbarSetting();
+      if (current !== migrated) {
+        await game.settings.set(WindowControls.MODULE_ID, 'organizedMinimize', migrated);
+        return;
+      }
+
+      const settingOrganized = migrated;
 
       if (WindowControls._isTaskbarMode(settingOrganized)) {
         wrapAppV1('minimize', function (wrapped, ...args) {
@@ -1461,9 +1840,11 @@ class WindowControls {
     const rootStyle = document.documentElement?.style;
     if (rootStyle) rootStyle.setProperty('--taskbarcolor', value);
 
-    // Optional direct style fallback (helps if a theme overrides the CSS variable).
+    // Do not set an inline background-color here. The taskbar background is rendered
+    // via CSS (including alpha) and the bar itself is click-through.
+    // Clear any previously set inline value from older versions.
     const bar = document.getElementById('window-controls-persistent');
-    if (bar) bar.style.backgroundColor = value;
+    if (bar) bar.style.removeProperty('background-color');
   }
 
   static _setTaskbarScrollbarColor(value) {
@@ -1582,7 +1963,7 @@ class WindowControls {
     // Remove previous injected headers if SettingsConfig re-renders.
     moduleRoot.find('.wc-settings-header').remove();
 
-    const taskbarKeys = ['organizedMinimize', 'minimizeButton', 'clickOutsideMinimize', 'taskbarColor', 'taskbarScrollbarColor'];
+    const taskbarKeys = ['organizedMinimize', 'minimizeButton', 'clickOutsideMinimize', 'taskbarColor', 'taskbarScrollbarColor', 'debugLogging', 'debugVerbose'];
     const pinningKeys = ['pinnedButton', 'pinnedHeaderColor', 'pinnedDoubleTapping', 'rememberPinnedWindows'];
 
     const taskbarHeader = $('<h3 class="wc-settings-header">Taskbar</h3>');
@@ -1605,6 +1986,17 @@ class WindowControls {
     WindowControls._enhanceColorPickerSetting($html, 'taskbarColor');
     WindowControls._enhanceColorPickerSetting($html, 'taskbarScrollbarColor');
     WindowControls._enhanceColorPickerSetting($html, 'pinnedHeaderColor');
+
+    // Foundry SettingsConfig escapes HTML in setting labels, so apply bold styling here.
+    const debugGroup = getGroup('debugLogging');
+    if (debugGroup?.length) {
+      const label = debugGroup.find('label').first();
+      if (label?.length && label.data('wcDebugLabelBolded') !== 1) {
+        label.data('wcDebugLabelBolded', 1);
+        const text = label.text();
+        label.html(`<b>${text}</b>`);
+      }
+    }
   }
 
   static _enhanceColorPickerSetting($html, key) {

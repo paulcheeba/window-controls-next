@@ -38,15 +38,37 @@
     left: 0;
     right: 0;
     height: var(--wc-taskbar-height);
-    background-color: var(--taskbarcolor);
     z-index: 100000;
-    pointer-events: auto;
+    /* Click-through bar so dropping a dragged window behind it still works. */
+    pointer-events: none;
     display: flex;
     align-items: center;
     padding: 0 6px;
     box-sizing: border-box;
+}
+
+/* Render the bar background at 80% opacity without affecting button opacity. */
+#window-controls-persistent::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-color: var(--taskbarcolor);
     background-image: linear-gradient(45deg, transparent 49%, #000000 49%, #000000 51%, transparent 51%), linear-gradient(-45deg, transparent 49%, #000000 49%, #000000 51%, transparent 51%);
     background-size: 4px 4px;
+    opacity: 0.8;
+    pointer-events: none;
+    z-index: 0;
+}
+
+/* Ensure taskbar content sits above the background layer. */
+#window-controls-persistent > .wc-taskbar-scroll {
+    position: relative;
+    z-index: 1;
+}
+
+/* Buttons remain clickable even though the bar is click-through. */
+#window-controls-persistent .wc-taskbar-btn {
+    pointer-events: auto;
 }
 
 /* Taskbar buttons scroll container (horizontal), with scrollbar hidden */
