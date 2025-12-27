@@ -29,9 +29,20 @@ class WindowControls {
 
   static _patches = new Map();
 
+  static _barrierWatcherInstalled = false;
+
   static _isDebugLoggingEnabled() {
     try {
       return game?.settings?.get(WindowControls.MODULE_ID, 'debugLogging') === true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  static _isVerboseDebugLoggingEnabled() {
+    try {
+      if (!WindowControls._isDebugLoggingEnabled()) return false;
+      return game?.settings?.get(WindowControls.MODULE_ID, 'debugVerbose') === true;
     } catch (e) {
       return false;
     }
@@ -41,6 +52,109 @@ class WindowControls {
     if (!WindowControls._isDebugLoggingEnabled()) return;
     // Use console.log because console.debug is often hidden by default.
     console.log('Window Controls Next |', ...args);
+  }
+
+  static _debugVerbose(...args) {
+    if (!WindowControls._isVerboseDebugLoggingEnabled()) return;
+    console.log('Window Controls Next |', ...args);
+  }
+
+  static _installTaskbarBarrierWatcher() {
+    if (WindowControls._barrierWatcherInstalled) return;
+    WindowControls._barrierWatcherInstalled = true;
+
+    const marginPx = 2;
+    const stateByWindowEl = new WeakMap();
+    let draggingWindowEl = null;
+
+    const getTaskbarRect = () => {
+      const bar = document.getElementById('window-controls-persistent');
+      if (!(bar instanceof HTMLElement)) return null;
+      const rect = bar.getBoundingClientRect();
+      if (!rect.width || !rect.height) return null;
+      // If the bar is hidden due to disabled taskbar mode, don't log.
+      if (getComputedStyle(bar).display === 'none') return null;
+      return rect;
+    };
+
+    const getWindowTitle = (el) => {
+      try {
+        const titleEl = el.querySelector('.window-title, h4.window-title, header .window-title');
+        const title = titleEl?.textContent?.trim();
+        if (title) return title;
+      } catch { /* ignore */ }
+      return el.id || 'window';
+    };
+
+    const isTaskbarTop = (barRect) => {
+      const distTop = Math.abs(barRect.top);
+      const distBottom = Math.abs(window.innerHeight - barRect.bottom);
+      return distTop <= distBottom;
+    };
+
+    const check = () => {
+      if (!WindowControls._isDebugLoggingEnabled()) return;
+      if (!(draggingWindowEl instanceof HTMLElement)) return;
+
+      const barRect = getTaskbarRect();
+      if (!barRect) return;
+
+      const winRect = draggingWindowEl.getBoundingClientRect();
+      const top = isTaskbarTop(barRect);
+      const violating = top
+        ? (winRect.top < (barRect.bottom + marginPx))
+        : (winRect.bottom > (barRect.top - marginPx));
+
+      const prev = stateByWindowEl.get(draggingWindowEl) === true;
+      if (violating === prev) return;
+
+      stateByWindowEl.set(draggingWindowEl, violating);
+      WindowControls._debug(
+        `Taskbar barrier ${violating ? 'CONTACT' : 'clear'}`,
+        {
+          side: top ? 'top' : 'bottom',
+          title: getWindowTitle(draggingWindowEl),
+          window: { top: Math.round(winRect.top), bottom: Math.round(winRect.bottom), height: Math.round(winRect.height) },
+          taskbar: { top: Math.round(barRect.top), bottom: Math.round(barRect.bottom), height: Math.round(barRect.height) },
+          marginPx
+        }
+      );
+    };
+
+    const onPointerDown = (event) => {
+      if (!WindowControls._isDebugLoggingEnabled()) return;
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+
+      // Only track real window drags (header grab).
+      const header = target.closest('.window-header, header.window-header');
+      if (!header) return;
+
+      const win = header.closest('.app.window-app, .window-app, .app');
+      if (!(win instanceof HTMLElement)) return;
+
+      draggingWindowEl = win;
+      // Reset state so the first contact/clear during this drag is reported.
+      stateByWindowEl.delete(draggingWindowEl);
+      check();
+    };
+
+    const onPointerMove = () => {
+      if (!draggingWindowEl) return;
+      check();
+    };
+
+    const onPointerUp = () => {
+      if (!draggingWindowEl) return;
+      // One last check on release.
+      check();
+      draggingWindowEl = null;
+    };
+
+    document.addEventListener('pointerdown', onPointerDown, true);
+    document.addEventListener('pointermove', onPointerMove, true);
+    document.addEventListener('pointerup', onPointerUp, true);
+    document.addEventListener('pointercancel', onPointerUp, true);
   }
 
   static _debugDescribeApp(app) {
@@ -1362,6 +1476,15 @@ class WindowControls {
       }
     });
 
+    game.settings.register(WindowControls.MODULE_ID, 'debugVerbose', {
+      name: game.i18n.localize('WindowControls.DebugVerboseName'),
+      hint: game.i18n.localize('WindowControls.DebugVerboseHint'),
+      scope: 'client',
+      config: true,
+      type: Boolean,
+      default: false
+    });
+
   }
 
   static initHooks() {
@@ -1440,39 +1563,34 @@ class WindowControls {
         });
       };
 
-      // Debugging instrumentation (gated behind the Debug Logging setting).
-      // Goal: identify which methods fire during drag/position updates for sheets.
-      const shouldDebugApp = (app) => {
-        if (!WindowControls._isDebugLoggingEnabled()) return false;
+      // Debugging: default mode logs only when a dragged window hits/clears the taskbar barrier.
+      // Very noisy internal method tracing is behind the separate Verbose Debug Logs toggle.
+      WindowControls._installTaskbarBarrierWatcher();
+
+      const shouldVerboseDebugApp = (app) => {
+        if (!WindowControls._isVerboseDebugLoggingEnabled()) return false;
         if (WindowControls._shouldIgnoreApp(app)) return false;
-        // Focus debug output on Document-backed sheets.
         return WindowControls._isTargetSheet(app);
       };
 
-      const debugWrap = (wrapFn, method) => {
+      const verboseWrap = (wrapFn, method) => {
         wrapFn(method, function (wrapped, ...args) {
-          if (shouldDebugApp(this)) {
+          if (shouldVerboseDebugApp(this)) {
             const first = args?.[0];
             const pos = (first && typeof first === 'object') ? first : undefined;
-            WindowControls._debug(method, WindowControls._debugDescribeApp(this), pos ?? first ?? null);
+            WindowControls._debugVerbose(method, WindowControls._debugDescribeApp(this), pos ?? first ?? null);
           }
           return wrapped(...args);
         });
       };
 
-      // Positioning hooks.
-      debugWrap(wrapAppV1, 'setPosition');
-      debugWrap(wrapAppV2, 'setPosition');
-
-      // Common drag handler names (Foundry versions/themes may differ; wrappers no-op if missing).
-      for (const m of ['_onDragMouseDown', '_onDragMouseMove', '_onDragMouseUp', '_onDragStart', '_onDragMove', '_onDragDrop', '_onDragEnd']) {
-        debugWrap(wrapAppV1, m);
-        debugWrap(wrapAppV2, m);
-      }
+      // Positioning hooks (verbose only).
+      verboseWrap(wrapAppV1, 'setPosition');
+      verboseWrap(wrapAppV2, 'setPosition');
 
       if (WindowControls._isDebugLoggingEnabled()) {
-        WindowControls._debug('Ready hook: debug logging active.', {
-          organizedMinimize: migrated,
+        WindowControls._debug('Debug logging active (barrier contact mode).', {
+          verbose: WindowControls._isVerboseDebugLoggingEnabled(),
           viewport: { w: window.innerWidth, h: window.innerHeight },
           taskbar: {
             el: !!document.getElementById('window-controls-persistent'),
@@ -1697,7 +1815,7 @@ class WindowControls {
     // Remove previous injected headers if SettingsConfig re-renders.
     moduleRoot.find('.wc-settings-header').remove();
 
-    const taskbarKeys = ['organizedMinimize', 'minimizeButton', 'clickOutsideMinimize', 'taskbarColor', 'taskbarScrollbarColor', 'debugLogging'];
+    const taskbarKeys = ['organizedMinimize', 'minimizeButton', 'clickOutsideMinimize', 'taskbarColor', 'taskbarScrollbarColor', 'debugLogging', 'debugVerbose'];
     const pinningKeys = ['pinnedButton', 'pinnedHeaderColor', 'pinnedDoubleTapping', 'rememberPinnedWindows'];
 
     const taskbarHeader = $('<h3 class="wc-settings-header">Taskbar</h3>');

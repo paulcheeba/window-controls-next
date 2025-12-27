@@ -42,4 +42,7 @@
     ,"WindowControls.DebugLoggingName": "Enable Debugging:"
     ,"WindowControls.DebugLoggingHint": "Enable comprehensive debugging logs."
 
+    ,"WindowControls.DebugVerboseName": "Verbose Debug Logs"
+    ,"WindowControls.DebugVerboseHint": "Log internal method calls (very noisy)."
+
 }
