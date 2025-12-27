@@ -39,7 +39,7 @@
   ,"WindowControls.TaskbarScrollbarColorName": "Scrollbar-Farbe der Taskleiste"
   ,"WindowControls.TaskbarScrollbarColorHint": "Farbe des Scrollbar-Reglers der Taskleiste. Leer lassen, um das Theme-Standard zu verwenden."
 
-  ,"WindowControls.DebugLoggingName": "<b>Enable Debugging:</b>"
+  ,"WindowControls.DebugLoggingName": "Enable Debugging:"
   ,"WindowControls.DebugLoggingHint": "Enable comprehensive debugging logs."
 
 }

@@ -1720,6 +1720,17 @@ class WindowControls {
     WindowControls._enhanceColorPickerSetting($html, 'taskbarColor');
     WindowControls._enhanceColorPickerSetting($html, 'taskbarScrollbarColor');
     WindowControls._enhanceColorPickerSetting($html, 'pinnedHeaderColor');
+
+    // Foundry SettingsConfig escapes HTML in setting labels, so apply bold styling here.
+    const debugGroup = getGroup('debugLogging');
+    if (debugGroup?.length) {
+      const label = debugGroup.find('label').first();
+      if (label?.length && label.data('wcDebugLabelBolded') !== 1) {
+        label.data('wcDebugLabelBolded', 1);
+        const text = label.text();
+        label.html(`<b>${text}</b>`);
+      }
+    }
   }
 
   static _enhanceColorPickerSetting($html, key) {

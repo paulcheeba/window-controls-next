@@ -48,7 +48,7 @@
   "WindowControls.TaskbarHoverPreviewDelayName": "Hover Preview Delay (ms)",
   "WindowControls.TaskbarHoverPreviewDelayHint": "Delay in milliseconds before the preview shows while hovering.",
 
-  "WindowControls.DebugLoggingName": "<b>Enable Debugging:</b>",
+  "WindowControls.DebugLoggingName": "Enable Debugging:",
   "WindowControls.DebugLoggingHint": "Enable comprehensive debugging logs."
 
 }

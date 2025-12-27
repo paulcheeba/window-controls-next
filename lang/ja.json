@@ -39,7 +39,7 @@
     ,"WindowControls.TaskbarScrollbarColorName": "タスクバーのスクロールバー色"
     ,"WindowControls.TaskbarScrollbarColorHint": "タスクバーの水平スクロールバー（つまみ）の色。空欄の場合はテーマの既定値を使用します。"
 
-    ,"WindowControls.DebugLoggingName": "<b>Enable Debugging:</b>"
+    ,"WindowControls.DebugLoggingName": "Enable Debugging:"
     ,"WindowControls.DebugLoggingHint": "Enable comprehensive debugging logs."
 
 }
