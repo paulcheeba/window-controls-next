@@ -1840,9 +1840,11 @@ class WindowControls {
     const rootStyle = document.documentElement?.style;
     if (rootStyle) rootStyle.setProperty('--taskbarcolor', value);
 
-    // Optional direct style fallback (helps if a theme overrides the CSS variable).
+    // Do not set an inline background-color here. The taskbar background is rendered
+    // via CSS (including alpha) and the bar itself is click-through.
+    // Clear any previously set inline value from older versions.
     const bar = document.getElementById('window-controls-persistent');
-    if (bar) bar.style.backgroundColor = value;
+    if (bar) bar.style.removeProperty('background-color');
   }
 
   static _setTaskbarScrollbarColor(value) {
