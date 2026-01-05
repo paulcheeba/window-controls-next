@@ -42,5 +42,14 @@ When enabled, pinned sheets are remembered by Document UUID and restored on next
 * Community maintenance and prior v12-era fork work: saif-ellafi
 * Current v13+ modernization, taskbar workflow, and ongoing maintenance: paulcheeba
 
+## Dependencies
+
+- This module is part of the **OverEngineeredVTT Suite** and Requires the installation of the lightweight OEV Suite Monitor, a master module that tracks OEV module versions for you and lets you know when updates or new modules are available.
+
+## Additional links
+
+- Join our [Discord](https://discord.gg/VNZwZTCB5U) server
+- Support me on [Patreon](https://www.patreon.com/cw/u45257624)
+
 # License
 [MIT License](./LICENSE.md)
