@@ -7,12 +7,22 @@
 			"name": "paulcheeba"		}
 	],
 	"description": "Window Taskbar and Window Buttons: Minimize and Pin floating Windows to a top or bottom taskbar. Updated for Foundry VTT v13+.",
-	"version": "13.1.0.4",
+	"version": "13.1.1.0",
 	"compatibility": {
 		"minimum": "13",
 		"verified": "13.351",
 		"maximum": "13.999"
 	},
+	"relationships": {
+    "requires": [
+      {
+        "id": "oev-suite-monitor",
+        "type": "module",
+        "manifest": "https://github.com/paulcheeba/OverEngineeredVTT-Suite-Monitor/releases/latest/download/module.json",
+        "compatibility": {}
+      }
+    ]
+  },
 	"esmodules": [ "windowcontrols.js" ],
 	"styles": [ "windowcontrols.css" ],
 	"languages": [
@@ -39,6 +49,5 @@
 	],
 	"url": "https://github.com/paulcheeba/window-controls-next",
 	"manifest": "https://github.com/paulcheeba/window-controls-next/releases/latest/download/module.json",
-	"download": "https://github.com/paulcheeba/window-controls-next/releases/latest/download/window-controls-next.zip",
-	"changelog": "https://github.com/paulcheeba/window-controls-next/releases/latest/download/CHANGELOG.md"
+	"download": "https://github.com/paulcheeba/window-controls-next/releases/latest/download/window-controls-next.zip"
 }
