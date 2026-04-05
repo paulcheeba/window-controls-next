@@ -1406,15 +1406,20 @@ class WindowControls {
     }
   }
 
+  // Null-guard fixes contributed by Andersants (issue #7):
+  // Token Mold and some other modules can pass null/non-string values here,
+  // causing a console error on right-click. Coerce defensively before calling .replace().
   static curateId(text) {
-    return text.replace(/\W/g, '_');
+    return (text || "").replace(/\W/g, '_');
   }
 
   static curateTitle(title) {
+    if (!title || typeof title !== 'string') return "";
     return title.replace("[Token] ", "~ ").replace("Table Configuration: ", "");
   }
 
   static uncurateTitle(title) {
+    if (!title || typeof title !== 'string') return "";
     return title.replace("~ ", "[Token] ");
   }
 
