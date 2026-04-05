@@ -8,8 +8,8 @@
   "WindowControls.MinimizeButtonName": "Minimize Button",
   "WindowControls.MinimizeButtonHint": "Add a minimize button on all floating windows.",
 
-  "WindowControls.OrganizedMinimizeName": "Organized Minimize",
-  "WindowControls.OrganizedMinimizeHint": "Organize minimized windows by placing them either on a bottom line or top bar.",
+  "WindowControls.OrganizedMinimizeName": "Taskbar Location",
+  "WindowControls.OrganizedMinimizeHint": "Minimize windows to either the bottom or top taskbar.",
 
   "WindowControls.OrganizedMinimizeBottom": "Bottom",
   "WindowControls.OrganizedMinimizeBottomBar": "Bottom with Bar (Windows cannot move)",
@@ -35,6 +35,7 @@
 
   "WindowControls.Minimize": "Minimize",
   "WindowControls.Maximize": "Maximize",
+  "WindowControls.DefaultSize": "Default Size",
   "WindowControls.Pin": "Pin",
 
   "WindowControls.TaskbarColorName": "Taskbar Color",
@@ -42,6 +43,11 @@
 
   "WindowControls.TaskbarScrollbarColorName": "Taskbar Scrollbar Color",
   "WindowControls.TaskbarScrollbarColorHint": "Color of the taskbar's horizontal scrollbar thumb. Leave blank to use the theme default.",
+
+  "WindowControls.TaskbarWidthName": "Taskbar Width",
+  "WindowControls.TaskbarWidthHint": "Controls how wide the taskbar bar extends. 'Canvas Only' stops the bar at the sidebar edge, preventing it from overlapping sidebar UI elements.",
+  "WindowControls.TaskbarWidthFull": "Full Width",
+  "WindowControls.TaskbarWidthCanvas": "Canvas Only",
 
   "WindowControls.TaskbarHoverPreviewEnabledName": "Taskbar Hover Preview",
   "WindowControls.TaskbarHoverPreviewEnabledHint": "Hover over a taskbar button to temporarily preview the hidden window.",
@@ -52,6 +58,10 @@
   "WindowControls.DebugLoggingHint": "Enable comprehensive debugging logs.",
 
   "WindowControls.DebugVerboseName": "Verbose Debug Logs",
-  "WindowControls.DebugVerboseHint": "Log internal method calls (very noisy)."
+  "WindowControls.DebugVerboseHint": "Log internal method calls (very noisy).",
+
+  "WindowControls.ContextRestore": "Restore",    "WindowControls.ContextMaximize": "Maximize",  "WindowControls.ContextPin": "Pin",
+  "WindowControls.ContextUnpin": "Unpin",
+  "WindowControls.ContextClose": "Close"
 
 }

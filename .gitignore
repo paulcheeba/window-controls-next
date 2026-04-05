@@ -1,17 +1,19 @@
-# Default ignored files
-/shelf/
-/workspace.xml
-/.idea/
-/dist/
-/node_modules/
-*.zip
+# IDE files
+.vscode/
 
-# Dev scratch (logs, notes, experiments)
-devFolder/
-devFolder/**
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
 
-# Copilot/dev prompt/instruction artifacts (keep workflows)
+# Development folders
 .github/instructions/
-.github/instructions/**
 .github/prompts/
-.github/prompts/**
+/.github/devFolder/window-controls-nextPostTemplates/
+/.github/devFolder/PostTemplates/
+/.github/devFolder/console-logs/
+/.github/devFolder/referenceDocs/
+/.github/devFolder/AI Chat Sessions/
+
+/.github/devFolder/posts/discordReleasePosts.md
+/.github/devFolder/posts/patreonPosts.md

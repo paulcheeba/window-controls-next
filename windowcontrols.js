@@ -34,6 +34,8 @@ class WindowControls {
 
   static _loggedStartup = false;
   static _lastLoggedTaskbarState = null;
+  static _shownAppV1Warning = false;
+  static _sidebarResizeObserver = null;
 
   static _logAlways(...args) {
     try {
@@ -641,6 +643,7 @@ class WindowControls {
     });
 
     for (const btn of buttons) container.appendChild(btn);
+    WindowControls._updateTaskbarFadeClasses();
   }
 
   static _ensureHoverPreviewHandlers(entry, app) {
@@ -838,8 +841,22 @@ class WindowControls {
 
         container.scrollLeft = next;
         ev.preventDefault();
+        WindowControls._updateTaskbarFadeClasses();
       }, { passive: false });
+
+      // Also update fades when the container is scrolled natively.
+      container.addEventListener('scroll', () => {
+        WindowControls._updateTaskbarFadeClasses();
+      }, { passive: true });
     }
+  }
+
+  static _updateTaskbarFadeClasses() {
+    const container = WindowControls._getTaskbarButtonsContainer();
+    if (!(container instanceof HTMLElement)) return;
+    const { scrollLeft, scrollWidth, clientWidth } = container;
+    container.classList.toggle('wc-fade-left',  scrollLeft > 1);
+    container.classList.toggle('wc-fade-right', scrollLeft < scrollWidth - clientWidth - 1);
   }
 
   static _applyTaskbarDockLayout() {
@@ -1062,9 +1079,99 @@ class WindowControls {
     btn.classList.toggle('pinned', !!existingEntry.pinned);
 
     WindowControls._ensureHoverPreviewHandlers(existingEntry, app);
+    WindowControls._ensureTaskbarButtonContextMenu(existingEntry, app);
 
     WindowControls._taskbarEntries.set(strKey, existingEntry);
     WindowControls._sortTaskbarButtons();
+  }
+
+  static _ensureTaskbarButtonContextMenu(entry, app) {
+    if (!entry || !(entry.button instanceof HTMLElement) || !app) return;
+    if (entry._wcContextMenuInstalled === true) return;
+    entry._wcContextMenuInstalled = true;
+
+    entry.button.addEventListener('contextmenu', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+
+      // Close any existing WCN context menu.
+      document.getElementById('wc-context-menu')?.remove();
+
+      const isPinned = app._pinned === true;
+      const pinnedEnabled = game?.settings?.get(WindowControls.MODULE_ID, 'pinnedButton') === 'enabled';
+
+      const items = [
+        {
+          label: game.i18n.localize('WindowControls.ContextRestore'),
+          icon: 'fa-solid fa-window-restore',
+          action: () => { void WindowControls._restoreFromTaskbar(app); }
+        },
+        {
+          label: game.i18n.localize('WindowControls.ContextMaximize'),
+          icon: 'fa-solid fa-expand',
+          action: () => { void WindowControls._maximizeToViewport(app); }
+        },
+        {
+          label: game.i18n.localize('WindowControls.DefaultSize'),
+          icon: 'fa-solid fa-compress',
+          action: () => { void WindowControls._restoreDefaultSize(app); }
+        },
+      ];
+
+      if (pinnedEnabled) {
+        items.push({
+          label: isPinned
+            ? game.i18n.localize('WindowControls.ContextUnpin')
+            : game.i18n.localize('WindowControls.ContextPin'),
+          icon: 'fa-solid fa-map-pin',
+          action: () => { WindowControls.applyPinnedMode(app); }
+        });
+      }
+
+      items.push({
+        label: game.i18n.localize('WindowControls.ContextClose'),
+        icon: 'fa-solid fa-times',
+        action: () => {
+          WindowControls.organizedClose(app, WindowControls._getTaskbarSetting());
+          if (typeof app.close === 'function') void app.close();
+        }
+      });
+
+      const menu = document.createElement('nav');
+      menu.id = 'wc-context-menu';
+      menu.className = 'context-menu';
+      menu.innerHTML = items.map(item =>
+        `<li class="context-item"><a><i class="${foundry.utils.escapeHTML(item.icon)}"></i>${foundry.utils.escapeHTML(item.label)}</a></li>`
+      ).join('');
+
+      document.body.appendChild(menu);
+
+      // Position above the button (taskbar is at bottom or top).
+      const btnRect = entry.button.getBoundingClientRect();
+      const menuH = menu.offsetHeight || 100;
+      const above = btnRect.top > window.innerHeight / 2;
+      menu.style.position = 'fixed';
+      menu.style.left = Math.min(ev.clientX, window.innerWidth - menu.offsetWidth - 4) + 'px';
+      menu.style.top = above
+        ? (btnRect.top - menuH - 4) + 'px'
+        : (btnRect.bottom + 4) + 'px';
+      menu.style.zIndex = '100001';
+
+      // Wire up click handlers.
+      menu.querySelectorAll('li.context-item').forEach((li, i) => {
+        li.addEventListener('click', (e) => {
+          e.stopPropagation();
+          menu.remove();
+          items[i].action();
+        });
+      });
+
+      // Close on any outside click.
+      const close = (e) => {
+        if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('click', close, true); }
+      };
+      setTimeout(() => document.addEventListener('click', close, true), 0);
+    });
   }
 
   static _removeTaskbarButton(app) {
@@ -1075,6 +1182,54 @@ class WindowControls {
     if (entry.button?.parentElement) entry.button.parentElement.removeChild(entry.button);
     WindowControls._taskbarEntries.delete(String(key));
     WindowControls._sortTaskbarButtons();
+  }
+
+  static async _maximizeToViewport(app) {
+    if (WindowControls._isHiddenToTaskbar(app)) {
+      await WindowControls._restoreFromTaskbar(app);
+    }
+    await new Promise(r => requestAnimationFrame(r));
+    const el = WindowControls._getElement(app);
+    if (!el) return;
+    const taskbarPx = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--wc-taskbar-height')) || 0;
+    const isTop    = document.body.classList.contains('wc-taskbar-top');
+    const isBottom = document.body.classList.contains('wc-taskbar-bottom');
+    const top    = isTop    ? taskbarPx : 0;
+    const bottom = isBottom ? taskbarPx : 0;
+    el.style.left   = '0px';
+    el.style.top    = `${top}px`;
+    el.style.width  = `${window.innerWidth}px`;
+    el.style.height = `${window.innerHeight - top - bottom}px`;
+  }
+
+  static _getDefaultSize(app) {
+    // AppV2: DEFAULT_OPTIONS.position may carry width / height.
+    const defV2 = app?.constructor?.DEFAULT_OPTIONS?.position;
+    if (defV2?.width || defV2?.height) return { width: defV2.width ?? undefined, height: defV2.height ?? undefined };
+    // AppV1: static defaultOptions.
+    const defV1 = app?.constructor?.defaultOptions;
+    if (defV1?.width || defV1?.height) return { width: defV1.width ?? undefined, height: defV1.height ?? undefined };
+    // Last resort: options recorded at instantiation time.
+    const w = app?.options?.width;
+    const h = app?.options?.height;
+    return { width: (w && w !== 'auto') ? w : undefined, height: (h && h !== 'auto') ? h : undefined };
+  }
+
+  static async _restoreDefaultSize(app) {
+    if (WindowControls._isHiddenToTaskbar(app)) {
+      await WindowControls._restoreFromTaskbar(app);
+      await new Promise(r => requestAnimationFrame(r));
+    }
+    const size = WindowControls._getDefaultSize(app);
+    if (typeof app.setPosition === 'function') {
+      app.setPosition(size);
+    } else {
+      const el = WindowControls._getElement(app);
+      if (el) {
+        if (size.width)  el.style.width  = `${size.width}px`;
+        if (size.height) el.style.height = `${size.height}px`;
+      }
+    }
   }
 
   static _restoreFromTaskbar(app) {
@@ -1191,6 +1346,18 @@ class WindowControls {
           if (WindowControls._isMinimized(app)) await app.maximize();
           else await app.minimize();
         }
+      }));
+      controls.appendChild(makeControl({
+        cls: 'wc-maximize',
+        icon: 'fa-solid fa-expand',
+        titleKey: 'WindowControls.Maximize',
+        onClick: async () => { await WindowControls._maximizeToViewport(app); }
+      }));
+      controls.appendChild(makeControl({
+        cls: 'wc-default-size',
+        icon: 'fa-solid fa-compress',
+        titleKey: 'WindowControls.DefaultSize',
+        onClick: async () => { await WindowControls._restoreDefaultSize(app); }
       }));
     }
 
@@ -1609,6 +1776,11 @@ class WindowControls {
 
   static _injectHeaderControlsV1(app, buttons) {
     if (WindowControls._shouldIgnoreApp(app)) return;
+
+    // Idempotency: skip if WCN buttons are already present (prototype wrap + hook both call this).
+    const alreadyInjected = buttons.some(b => b._wcn === true);
+    if (alreadyInjected) return;
+
     const close = buttons.find(b => b.class === 'close');
     if (close) close.label = '';
 
@@ -1620,6 +1792,7 @@ class WindowControls {
         label: "",
         class: "minimize",
         icon: "far fa-window-minimize",
+        _wcn: true,
         onclick: function () {
           if (WindowControls._isMinimized(this)) this.maximize(true);
           else {
@@ -1630,6 +1803,20 @@ class WindowControls {
           }
         }.bind(app)
       });
+      newButtons.push({
+        label: "",
+        class: "wc-maximize",
+        icon: "fa-solid fa-expand",
+        _wcn: true,
+        onclick: () => { void WindowControls._maximizeToViewport(app); }
+      });
+      newButtons.push({
+        label: "",
+        class: "wc-default-size",
+        icon: "fa-solid fa-compress",
+        _wcn: true,
+        onclick: () => { void WindowControls._restoreDefaultSize(app); }
+      });
     }
 
     const pinnedSetting = game.settings.get(WindowControls.MODULE_ID, 'pinnedButton');
@@ -1638,6 +1825,7 @@ class WindowControls {
         label: "",
         class: "pin",
         icon: "fas fa-map-pin",
+        _wcn: true,
         onclick: () => {
           WindowControls.applyPinnedMode(app);
           WindowControls.applyPinnedMode(Object.values(ui.windows).find(w => w.targetApp?.appId === app.appId));
@@ -1645,7 +1833,14 @@ class WindowControls {
       });
     }
 
-    buttons.unshift(...newButtons);
+    // Move close to the end so it is always the rightmost button (×), with
+    // WCN buttons immediately left of it and all system buttons before them.
+    const closeIndex = buttons.indexOf(close);
+    if (closeIndex !== -1) buttons.splice(closeIndex, 1);
+
+    buttons.push(...newButtons);
+
+    if (close) buttons.push(close);
   }
 
   static _injectHeaderControlsV2(app, controls) {
@@ -1793,6 +1988,23 @@ class WindowControls {
       }
     });
 
+    game.settings.register(WindowControls.MODULE_ID, 'taskbarWidth', {
+      name: game.i18n.localize("WindowControls.TaskbarWidthName"),
+      hint: game.i18n.localize("WindowControls.TaskbarWidthHint"),
+      scope: 'world',
+      config: true,
+      type: String,
+      choices: {
+        "fullWidth": game.i18n.localize("WindowControls.TaskbarWidthFull"),
+        "canvasOnly": game.i18n.localize("WindowControls.TaskbarWidthCanvas"),
+      },
+      default: "fullWidth",
+      requiresReload: true,
+      onChange: () => {
+        WindowControls._applyTaskbarWidthFromSetting();
+      }
+    });
+
     game.settings.register(WindowControls.MODULE_ID, 'debugLogging', {
       name: game.i18n.localize('WindowControls.DebugLoggingName'),
       hint: game.i18n.localize('WindowControls.DebugLoggingHint'),
@@ -1825,6 +2037,26 @@ class WindowControls {
 
   static initHooks() {
 
+    // Patch Application.prototype._getHeaderButtons at the prototype level so WCN
+    // buttons survive sheet systems (e.g. Twilight 2000) that rebuild their header
+    // DOM after the getApplicationV1HeaderButtons hook fires.  Using a direct
+    // prototype wrap (equivalent to libWrapper WRAPPER mode) ensures the injection
+    // runs on every render regardless of third-party render order.
+    WindowControls._wrapMethod({
+      target: Application.prototype,
+      method: '_getHeaderButtons',
+      name: 'Application.prototype',
+      wrapper: function (wrapped, ...args) {
+        const buttons = wrapped(...args);
+        WindowControls._injectHeaderControlsV1(this, buttons);
+        return buttons;
+      }
+    });
+
+    // Keep the hook as a secondary safety net for any AppV1 that doesn't go
+    // through Application.prototype._getHeaderButtons (e.g. heavily overriding
+    // subclasses).  _injectHeaderControlsV1 is idempotent so double-injection
+    // is not a problem — it checks for existing buttons by class name.
     Hooks.on('getApplicationV1HeaderButtons', (app, buttons) => {
       WindowControls._injectHeaderControlsV1(app, buttons);
     });
@@ -1853,6 +2085,20 @@ class WindowControls {
       const el = html?.[0];
       if (!(el instanceof HTMLElement)) return;
 
+      // One-time notification: remind users that AppV1 sheets are deprecated in
+      // Foundry v13 and WCN header controls may not appear until the system/module
+      // providing this sheet is updated to ApplicationV2.
+      if (!WindowControls._shownAppV1Warning) {
+        WindowControls._shownAppV1Warning = true;
+        const name = app?.constructor?.name ?? 'Unknown';
+        ui?.notifications?.warn?.(
+          `Window Controls Next: The sheet "${name}" uses the legacy Application (v1) API which is deprecated in Foundry v13. ` +
+          `WCN header buttons may not appear on AppV1 sheets until the system or module that provides them is updated to ApplicationV2. ` +
+          `This warning can be safely ignored.`,
+          { permanent: false }
+        );
+      }
+
       // Enforce single open instance per persisted Document UUID.
       void WindowControls._enforceSingleInstanceByPersistentId(app);
 
@@ -1878,6 +2124,7 @@ class WindowControls {
       WindowControls._applyTaskbarColorFromSetting();
       WindowControls._applyTaskbarScrollbarColorFromSetting();
       WindowControls._applyPinnedHeaderColorFromSetting();
+      WindowControls._applyTaskbarWidthFromSetting();
 
       const wrapAppV1 = (method, fn) => {
         return WindowControls._wrapMethod({
@@ -2010,6 +2257,15 @@ class WindowControls {
       WindowControls._showFromTaskbar(app);
     });
 
+    // Keep --wc-sidebar-width in sync when the sidebar collapses or expands.
+    Hooks.on('collapseSidebar', () => { WindowControls._updateSidebarWidthVariable(); });
+    Hooks.on('expandSidebar',   () => { WindowControls._updateSidebarWidthVariable(); });
+
+    // Update taskbar scroll fades when the window is resized (taskbar width changes).
+    window.addEventListener('resize', () => {
+      WindowControls._updateTaskbarFadeClasses();
+    }, { passive: true });
+
     Hooks.on('closeApplication', function (app) {
       WindowControls._removeTaskbarButton(app);
       WindowControls._showFromTaskbar(app);
@@ -2130,6 +2386,52 @@ class WindowControls {
     }
   }
 
+  static _updateSidebarWidthVariable() {
+    // Measure from #sidebar's left edge so the taskbar extends behind #ui-right-column-1
+    // (the chat/notifications column). That column is nudged away from the bar via CSS.
+    const sidebar = document.getElementById('sidebar');
+    const width = sidebar
+      ? Math.max(0, Math.round(window.innerWidth - sidebar.getBoundingClientRect().left) + 6)
+      : 0;
+    document.documentElement.style.setProperty('--wc-sidebar-width', `${width}px`);
+  }
+
+  static _applySidebarWidthObserver() {
+    // Tear down any previous observer.
+    if (WindowControls._sidebarResizeObserver) {
+      WindowControls._sidebarResizeObserver.disconnect();
+      WindowControls._sidebarResizeObserver = null;
+    }
+
+    const targets = ['sidebar', 'ui-right']
+      .map(id => document.getElementById(id))
+      .filter(Boolean);
+    if (!targets.length) return;
+
+    WindowControls._updateSidebarWidthVariable();
+
+    WindowControls._sidebarResizeObserver = new ResizeObserver(() => {
+      WindowControls._updateSidebarWidthVariable();
+    });
+    for (const target of targets) {
+      WindowControls._sidebarResizeObserver.observe(target);
+    }
+  }
+
+  static _applyTaskbarWidthFromSetting() {
+    const canvasOnly = game?.settings?.get(WindowControls.MODULE_ID, 'taskbarWidth') === 'canvasOnly';
+    document.body.classList.toggle('wc-taskbar-canvas-only', canvasOnly);
+    if (canvasOnly) {
+      WindowControls._applySidebarWidthObserver();
+    } else {
+      if (WindowControls._sidebarResizeObserver) {
+        WindowControls._sidebarResizeObserver.disconnect();
+        WindowControls._sidebarResizeObserver = null;
+      }
+      document.documentElement.style.setProperty('--wc-sidebar-width', '0px');
+    }
+  }
+
   static _organizeSettingsConfig(html) {
     if (!html) return;
 
@@ -2155,7 +2457,7 @@ class WindowControls {
     // Remove previous injected headers if SettingsConfig re-renders.
     moduleRoot.find('.wc-settings-header').remove();
 
-    const taskbarKeys = ['organizedMinimize', 'minimizeButton', 'clickOutsideMinimize', 'taskbarColor', 'taskbarScrollbarColor', 'debugLogging', 'debugVerbose'];
+    const taskbarKeys = ['organizedMinimize', 'taskbarWidth', 'minimizeButton', 'clickOutsideMinimize', 'taskbarColor', 'taskbarScrollbarColor', 'debugLogging', 'debugVerbose'];
     const pinningKeys = ['pinnedButton', 'pinnedHeaderColor', 'pinnedDoubleTapping', 'rememberPinnedWindows'];
 
     const taskbarHeader = $('<h3 class="wc-settings-header">Taskbar</h3>');

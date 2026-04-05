@@ -6,6 +6,23 @@ The format is based on Keep a Changelog, and this project aims to follow Semanti
 
 Note: The 13.x versions are the reworked Foundry VTT v13+ fork/modernization of the original module.
 
+## [13.1.2.0]
+### Added
+- **Canvas-only taskbar width** setting: the taskbar can now stop at the sidebar's left edge instead of spanning the full viewport, avoiding overlap with the chat/notifications column. A `ResizeObserver` keeps the boundary accurate when the sidebar resizes or collapses.
+- **Taskbar right-click context menu**: right-clicking a taskbar button opens a context menu with Restore, Maximize, Default Size, Pin/Unpin, and Close actions.
+- **Maximize** action: expands the window to fill the available viewport (accounting for taskbar height at top or bottom).
+- **Default Size** action: resets a window to its configured default dimensions (read from `DEFAULT_OPTIONS`, `defaultOptions`, or instantiation options).
+- AppV2 inline header now also includes **Maximize** and **Default Size** buttons alongside Minimize.
+- **Scroll-edge fade masks** on the taskbar: items cut off by horizontal overflow fade out at the left and/or right edge (toggled by JS scroll state).
+- New **Verbose Debug Logs** setting for per-method tracing (separate from the existing Debug Logging toggle).
+- One-time warning notification when a legacy **AppV1** sheet is detected, informing users that header controls may not appear until the system/module is updated to ApplicationV2.
+
+### Changed
+- Taskbar buttons are now **24 px tall** (tighter, less intrusive).
+- Taskbar now shows a **1 px dark border** on its screen-facing edge (bottom border for top taskbar, top border for bottom taskbar).
+- AppV1 header controls (Minimize, Maximize, Default Size, Pin) are now injected via a **prototype-level wrap** of `Application.prototype._getHeaderButtons` instead of relying solely on the hook, making injection reliable for systems that rebuild headers after the hook fires (e.g. Twilight: 2000).
+- The **Close button** is always positioned as the rightmost header control on AppV1 sheets, with WCN buttons immediately to its left.
+
 ## [13.1.1.0]
 ### Added
 - Required dependency on OEV Suite Monitor (OverEngineeredVTT Suite)

@@ -25,6 +25,15 @@ Adds a minimize button to supported sheets. Minimize is instant: the sheet is hi
 
 <img width="805" height="39" alt="image" src="https://github.com/user-attachments/assets/cc6b9614-7df8-40cf-93cb-9ffeebbb18d1" />
 
+### Maximize & Default Size
+Header buttons (and the taskbar right-click menu) let you instantly maximize a window to fill the available canvas area, or snap it back to its configured default dimensions.
+
+### Taskbar Right-Click Context Menu
+Right-clicking any taskbar button opens a context menu with: Restore, Maximize, Default Size, Pin/Unpin, and Close.
+
+### Canvas-Only Taskbar Width
+An optional setting stops the taskbar at the sidebar's left edge so it never overlaps the chat or notifications column. The boundary tracks sidebar resize and collapse automatically.
+
 ### Pin
 Pin a sheet so it stays available on the taskbar and can optionally be restored across sessions.
 - Pinned sheet header appearance is configurable, including header overlay color that also affects the taskbar button color.
@@ -36,6 +45,9 @@ Hover your mouse over a minimized window tab for a quick view of the sheet witho
 
 ### Remember Pinned Windows
 When enabled, pinned sheets are remembered by Document UUID and restored on next load.
+
+### Taskbar Width
+The taskbar can be set to Canvas width or Full width depending on your preference. Some Game Systems may alter the sidebar in ways that alter the Window Controls Next taskbar, setting Taskbar Width to Canvas should help.
 
 # Credits
 * Original module concept and early implementations: JeansenVaars

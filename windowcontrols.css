@@ -7,11 +7,12 @@
     --wcshadowcolor: unset;
     --wcshadowstrength: unset;
     --minimizedpos: absolute;
-    --minisidebaradj: calc(100vh - 10px);
+    --minisidebaradj: calc(100vh - 48px) !important;
     --miniminh: unset;
     --minimaxh: unset;
     --taskbarcolor: #0000;
     --wc-taskbar-height: 40px;
+    --wc-sidebar-width: 0px;
 
     /* Pinned styling: user chooses base color; header is forced to 25% alpha; taskbar pinned button is 20% darker with no alpha */
     --wc-pinned-header-bg: rgba(255, 136, 0, 0.25);
@@ -38,7 +39,7 @@
     left: 0;
     right: 0;
     height: var(--wc-taskbar-height);
-    z-index: 100000;
+    z-index: 2;
     /* Click-through bar so dropping a dragged window behind it still works. */
     pointer-events: none;
     display: flex;
@@ -89,6 +90,21 @@
     scrollbar-color: var(--wc-taskbar-scrollbar-color, var(--color-border-light-2, currentColor)) transparent;
 }
 
+/* Scroll-edge fade: mask-image fades out items that are cut off by overflow.
+   Classes are toggled by JS (_updateTaskbarFadeClasses) based on scroll position. */
+#window-controls-persistent > .wc-taskbar-scroll.wc-fade-left.wc-fade-right {
+    -webkit-mask-image: linear-gradient(to right, transparent 0px, black 32px, black calc(100% - 32px), transparent 100%);
+    mask-image:         linear-gradient(to right, transparent 0px, black 32px, black calc(100% - 32px), transparent 100%);
+}
+#window-controls-persistent > .wc-taskbar-scroll.wc-fade-left:not(.wc-fade-right) {
+    -webkit-mask-image: linear-gradient(to right, transparent 0px, black 32px);
+    mask-image:         linear-gradient(to right, transparent 0px, black 32px);
+}
+#window-controls-persistent > .wc-taskbar-scroll.wc-fade-right:not(.wc-fade-left) {
+    -webkit-mask-image: linear-gradient(to right, black calc(100% - 32px), transparent 100%);
+    mask-image:         linear-gradient(to right, black calc(100% - 32px), transparent 100%);
+}
+
 #window-controls-persistent > .wc-taskbar-scroll::-webkit-scrollbar {
     height: 6px;
 }
@@ -107,6 +123,8 @@ body.wc-taskbar-top #window-controls-persistent {
     bottom: auto !important;
     margin-top: 0 !important;
     transform: none !important;
+    border-bottom: 1px solid #444;
+    border-right: 1px solid #444;
 }
 
 body.wc-taskbar-bottom #window-controls-persistent {
@@ -114,6 +132,8 @@ body.wc-taskbar-bottom #window-controls-persistent {
     top: auto !important;
     margin-bottom: 0 !important;
     transform: none !important;
+    border-top: 1px solid #444;
+    border-right: 1px solid #444;
 }
 
 /* Taskbar mode: push Foundry UI away from the bar (no overlay).
@@ -140,17 +160,17 @@ body.wc-taskbar-bottom #interface {
 
 /* Fallback for any Foundry variants where #board is not inside #interface. */
 body.wc-taskbar-top #board {
-    top: var(--wc-taskbar-height) !important;
+    /*top: var(--wc-taskbar-height) !important;*/
     bottom: auto !important;
-    height: calc(100vh - var(--wc-taskbar-height)) !important;
-    max-height: calc(100vh - var(--wc-taskbar-height)) !important;
+    /*height: calc(100vh - var(--wc-taskbar-height)) !important;*/
+    /*max-height: calc(100vh - var(--wc-taskbar-height)) !important;*/
 }
 
 body.wc-taskbar-bottom #board {
     top: 0 !important;
     bottom: auto !important;
-    height: calc(100vh - var(--wc-taskbar-height)) !important;
-    max-height: calc(100vh - var(--wc-taskbar-height)) !important;
+    /*height: calc(100vh - var(--wc-taskbar-height)) !important;*/
+    /*max-height: calc(100vh - var(--wc-taskbar-height)) !important;*/
 }
 
 /* Keep sidebar height consistent with the reduced usable viewport. */
@@ -159,12 +179,57 @@ body.wc-taskbar-bottom {
     --minisidebaradj: calc(100vh - var(--wc-taskbar-height) - 10px);
 }
 
+/* ── Canvas-only taskbar width ───────────────────────────────────────────────
+   When taskbarWidth = canvasOnly the bar stops at the #sidebar left edge,
+   extending behind #ui-right-column-1 (chat/notifications panel).
+   #ui-right is made position:fixed so the sidebar is full viewport height.
+   #ui-right-column-1 / #chat-notifications are nudged away from the bar.
+*/
+body.wc-taskbar-canvas-only #window-controls-persistent {
+    right: var(--wc-sidebar-width, 0px) !important;
+}
+
+body.wc-taskbar-canvas-only #ui-right {
+    position: fixed !important;
+    right: 0 !important;
+    height: 100vh !important;
+}
+
+/* Top taskbar: #ui-right starts below the bar so the sidebar clears it. */
+body.wc-taskbar-top.wc-taskbar-canvas-only #ui-right {
+    /*top: var(--wc-taskbar-height) !important;*/
+    /*height: calc(100vh - var(--wc-taskbar-height)) !important;*/
+}
+
+/* Bottom taskbar: #ui-right from top of viewport, full height. */
+body.wc-taskbar-bottom.wc-taskbar-canvas-only #ui-right {
+    top: 0 !important;
+}
+
+/* Nudge chain/notifications column away from the bar. */
+body.wc-taskbar-bottom.wc-taskbar-canvas-only #ui-right-column-1,
+body.wc-taskbar-bottom.wc-taskbar-canvas-only #chat-notifications {
+    padding-bottom: var(--wc-taskbar-height) !important;
+    box-sizing: border-box !important;
+}
+
+body.wc-taskbar-top.wc-taskbar-canvas-only #ui-right-column-1,
+body.wc-taskbar-top.wc-taskbar-canvas-only #chat-notifications {
+    padding-top: var(--wc-taskbar-height) !important;
+    box-sizing: border-box !important;
+}
+
+body.wc-taskbar-canvas-only {
+    --minisidebaradj: calc(100vh - 10px);
+}
+
 #window-controls-persistent .wc-taskbar-btn {
+    --button-size: 24px;
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    height: 28px;
-    padding: 0 8px;
+    height: 24px;
+    padding: 0 4px;
 }
 
 #window-controls-persistent .wc-taskbar-btn.pinned {
@@ -263,4 +328,53 @@ input[type="color"].wc-color-picker::-moz-color-swatch {
 
 .hidden-placeholder {
     visibility: hidden;
+}
+
+/* ── Taskbar button right-click context menu ─────────────────────────────── */
+#wc-context-menu {
+    position: fixed;
+    z-index: 100001;
+    list-style: none;
+    margin: 0;
+    padding: 4px 0;
+    min-width: 150px;
+    background: var(--color-bg-option, #1c1c1c);
+    border: 1px solid var(--color-border-light-1, #555);
+    border-radius: 4px;
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.6);
+}
+
+#wc-context-menu li.context-item {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+#wc-context-menu li.context-item a {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    cursor: pointer;
+    color: var(--color-text-primary, #ddd);
+    text-decoration: none;
+    white-space: nowrap;
+    font-size: var(--font-size-13, 13px);
+    border: none;
+    background: none;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+#wc-context-menu li.context-item:hover a {
+    background: var(--color-hover-bg, rgba(255, 255, 255, 0.1));
+    color: var(--color-text-hyperlink, #fff);
+}
+
+#wc-context-menu li.context-item a i {
+    width: 14px;
+    text-align: center;
+    flex-shrink: 0;
+    font-size: 12px;
+    opacity: 0.8;
 }
