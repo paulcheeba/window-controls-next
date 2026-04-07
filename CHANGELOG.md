@@ -6,6 +6,11 @@ The format is based on Keep a Changelog, and this project aims to follow Semanti
 
 Note: The 13.x versions are the reworked Foundry VTT v13+ fork/modernization of the original module.
 
+## [13.1.2.4]
+### Fixed
+- **Pinned journal flash on load**: Remembered pinned AppV2 windows (journals and other complex sheets) were briefly visible on world load before being hidden to the taskbar. Root cause: Foundry's `ApplicationV2.render(force=true)` unconditionally calls `maximize().then(bringToFront())` after all render hooks complete, overriding our hook's `display:none`. The fix temporarily overrides `maximize` to a no-op on the sheet instance before calling `render`, then restores it and explicitly minimises after the render promise resolves — eliminating the race entirely. The 250ms retry poller (`_persistRenderMinimizeRetry`) is retained as a fallback for slow renderers and to restore saved position / sync the taskbar button. Also mitigates Issue #9 (GM Screen module seeing WCN-restored journals open momentarily on load).
+- **Sweep after `window-controls-next.ready`**: Fixed iteration over `foundry.applications.instances` (a `Map`) — `Object.values()` on a Map yields empty results; now uses `Array.from(instances.values())`.
+
 ## [13.1.2.3]
 ### Added
 - **Third-party app registration API**: Module developers can now opt standalone AppV2 windows into WCN management (taskbar, pin, minimize) by calling `WindowControls.registerApp(YourAppClass)` inside a `Hooks.once('window-controls-next.ready', ...)` callback. WCN fires the `window-controls-next.ready` hook after full initialisation. Example: `About Time Next` registers `ATEventManagerAppV2` this way so its Event Manager window gets full taskbar/pin support.

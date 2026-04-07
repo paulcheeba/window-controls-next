@@ -1540,7 +1540,29 @@ class WindowControls {
         const doc = await fromUuid(id);
         const sheet = doc?.sheet;
         if (!sheet || typeof sheet.render !== 'function') continue;
-        sheet.render(true);
+
+        const taskbarSetting = WindowControls._getTaskbarSetting();
+        const isTaskbarMode = WindowControls._isTaskbarMode(taskbarSetting);
+        const isAppV2 = !!(foundry?.applications?.api?.ApplicationV2 &&
+          sheet instanceof foundry.applications.api.ApplicationV2);
+
+        if (isAppV2 && isTaskbarMode && typeof sheet.maximize === 'function') {
+          // AppV2's render(force=true) calls maximize().then(bringToFront()) after all hooks
+          // complete, which overrides our hide. Override maximize to a no-op for this render
+          // so the window stays hidden; restore and minimise explicitly afterwards.
+          const _origMaximize = sheet.maximize;
+          sheet.maximize = async function() { return this; };
+          try {
+            await sheet.render(true);
+          } finally {
+            sheet.maximize = _origMaximize;
+          }
+          WindowControls.organizedMinimize(sheet, taskbarSetting);
+        } else {
+          // AppV1 or non-taskbar mode: flag-based approach handled in the render hook.
+          sheet._wcRestoringFromPersist = true;
+          sheet.render(true);
+        }
         WindowControls._persistRenderMinimizeRetry(sheet, { position });
       } catch (e) {
         console.warn(`Window Controls: Failed restoring pinned window for id ${id}`, e);
@@ -2119,13 +2141,40 @@ class WindowControls {
       void WindowControls._enforceSingleInstanceByPersistentId(app);
 
       // Safety: don't permanently hide windows across refresh unless we know why.
+      // NOTE: also skip un-hiding if this app is already tracked in the taskbar (e.g. journal
+      // page re-renders replace the element, losing the wcTaskbarHidden dataset marker).
       const key = WindowControls._getAppKey(app);
-      if (element?.style?.display === 'none' && element?.dataset?.wcTaskbarHidden !== '1' && (!key || !WindowControls._taskbarEntries.has(String(key)))) {
+      const isTaskbarTracked = key && WindowControls._taskbarEntries.has(String(key));
+      if (element?.style?.display === 'none' && element?.dataset?.wcTaskbarHidden !== '1' && !isTaskbarTracked) {
         element.style.display = '';
       }
 
+      // If this app is taskbar-tracked and hidden, re-apply the hidden marker to the new element
+      // (AppV2 re-renders replace the DOM element, losing the dataset marker).
+      if (isTaskbarTracked && app._minimized) {
+        WindowControls._hideToTaskbar(app);
+        // Re-apply after AppV2 finishes its own post-render steps (bringToFront etc. can reset display).
+        setTimeout(() => { if (app._minimized) WindowControls._hideToTaskbar(app); }, 0);
+        return;
+      }
+
       // Auto-apply remembered pin (for windows opened later).
-      if (WindowControls._isRememberedPinned(app)) WindowControls.applyPinnedMode(app, { mode: 'pin' });
+      if (WindowControls._isRememberedPinned(app)) {
+        WindowControls.applyPinnedMode(app, { mode: 'pin' });
+      }
+
+      // If this window is being restored from persist, hide it to the taskbar immediately
+      // rather than waiting for the 250ms retry poller — eliminates the visible flash.
+      // Check is independent of _isRememberedPinned in case cache isn't warm yet.
+      if (app._wcRestoringFromPersist) {
+        delete app._wcRestoringFromPersist;
+        const taskbarSetting = WindowControls._getTaskbarSetting();
+        if (WindowControls._isTaskbarMode(taskbarSetting)) {
+          WindowControls.organizedMinimize(app, taskbarSetting);
+          // Re-apply after AppV2 finishes its own post-render steps (bringToFront etc. can reset display).
+          setTimeout(() => { if (app._minimized) WindowControls._hideToTaskbar(app); }, 0);
+        }
+      }
     });
 
     Hooks.on('renderApplicationV1', (app, html) => {
@@ -2154,7 +2203,18 @@ class WindowControls {
         el.style.display = '';
       }
 
-      if (WindowControls._isRememberedPinned(app)) WindowControls.applyPinnedMode(app, { mode: 'pin' });
+      if (WindowControls._isRememberedPinned(app)) {
+        WindowControls.applyPinnedMode(app, { mode: 'pin' });
+      }
+
+      if (app._wcRestoringFromPersist) {
+        delete app._wcRestoringFromPersist;
+        const taskbarSetting = WindowControls._getTaskbarSetting();
+        if (WindowControls._isTaskbarMode(taskbarSetting)) {
+          WindowControls.organizedMinimize(app, taskbarSetting);
+          setTimeout(() => { if (app._minimized) WindowControls._hideToTaskbar(app); }, 0);
+        }
+      }
     });
 
     Hooks.on('renderSettingsConfig', (app, html) => {
@@ -2320,7 +2380,7 @@ class WindowControls {
       // callback that ran before ours — _registeredAppClasses was empty at render time.
       const liveApps = [
         ...Object.values(ui.windows ?? {}),
-        ...Object.values(foundry?.applications?.instances ?? {}),
+        ...Array.from(foundry?.applications?.instances?.values?.() ?? []),
       ];
       for (const app of liveApps) {
         if (!WindowControls._isTargetSheet(app)) continue;
