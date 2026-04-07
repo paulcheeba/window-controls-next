@@ -2153,7 +2153,7 @@ class WindowControls {
       // (AppV2 re-renders replace the DOM element, losing the dataset marker).
       if (isTaskbarTracked && app._minimized) {
         WindowControls._hideToTaskbar(app);
-        // Re-apply after AppV2 finishes its own post-render steps (bringToFront etc. can reset display).
+        // Re-apply after AppV2 finishes its own post-render steps (element replacement loses the marker).
         setTimeout(() => { if (app._minimized) WindowControls._hideToTaskbar(app); }, 0);
         return;
       }
@@ -2161,19 +2161,6 @@ class WindowControls {
       // Auto-apply remembered pin (for windows opened later).
       if (WindowControls._isRememberedPinned(app)) {
         WindowControls.applyPinnedMode(app, { mode: 'pin' });
-      }
-
-      // If this window is being restored from persist, hide it to the taskbar immediately
-      // rather than waiting for the 250ms retry poller — eliminates the visible flash.
-      // Check is independent of _isRememberedPinned in case cache isn't warm yet.
-      if (app._wcRestoringFromPersist) {
-        delete app._wcRestoringFromPersist;
-        const taskbarSetting = WindowControls._getTaskbarSetting();
-        if (WindowControls._isTaskbarMode(taskbarSetting)) {
-          WindowControls.organizedMinimize(app, taskbarSetting);
-          // Re-apply after AppV2 finishes its own post-render steps (bringToFront etc. can reset display).
-          setTimeout(() => { if (app._minimized) WindowControls._hideToTaskbar(app); }, 0);
-        }
       }
     });
 
