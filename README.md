@@ -49,6 +49,47 @@ When enabled, pinned sheets are remembered by Document UUID and restored on next
 ### Taskbar Width
 The taskbar can be set to Canvas width or Full width depending on your preference. Some Game Systems may alter the sidebar in ways that alter the Window Controls Next taskbar, setting Taskbar Width to Canvas should help.
 
+## Third-Party Module Integration
+
+Standalone AppV2 windows (those not backed by a Foundry Document) are not managed by WCN by default. Module developers can opt their windows in by calling `WindowControls.registerApp()` inside a `window-controls-next.ready` hook callback.
+
+### Examples
+
+**Generic pattern** — register your app class at top level in your module's entry file:
+
+```js
+Hooks.once('window-controls-next.ready', () => {
+  const WCN = game.modules.get('window-controls-next')?.api;
+  if (WCN) WCN.registerApp(YourAppClass);
+});
+```
+
+The `?.api` guard is recommended so your module won't error if WCN is not installed.
+
+**Real-world example** — The [About Time Next](https://github.com/paulcheeba/about-time-next) module includes an `ATEventManagerAppV2` window that has no document backing. To have WCN manage it (taskbar, pin, minimize) register its `ATEventManagerAppV2` window in `main.js`:
+
+```js
+// At the top of about-time.js, add the import:
+import { ATEventManagerAppV2 } from './module/ATEventManagerAppV2.js';
+
+// Then at top level alongside the other Hooks registrations:
+Hooks.once('window-controls-next.ready', () => {
+  const WCN = game.modules.get('window-controls-next')?.api;
+  if (WCN) WCN.registerApp(ATEventManagerAppV2);
+});
+```
+
+If importing the class isn't practical, pass the class name as a string instead — WCN will match against `app.constructor.name` at runtime:
+
+```js
+Hooks.once('window-controls-next.ready', () => {
+  const WCN = game.modules.get('window-controls-next')?.api;
+  if (WCN) WCN.registerApp('ATEventManagerAppV2');
+});
+```
+
+Once registered, WCN will apply the minimize button, pin button, taskbar button, and remembered pin state to any open or future instance of that class. WCN also performs a one-time sweep of all currently-open windows immediately after firing the hook, so windows that opened before WCN's `ready` callback ran are not missed.
+
 # Credits
 * Original module concept and early implementations: JeansenVaars
 * Community maintenance and prior v12-era fork work: saif-ellafi

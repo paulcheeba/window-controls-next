@@ -29,6 +29,21 @@ class WindowControls {
 
   static _patches = new Map();
 
+  // Registry of third-party AppV2 classes that have opted in to WCN management.
+  // Module devs call WindowControls.registerApp(MyAppClass) from within a
+  // 'window-controls-next.ready' hook to include their standalone AppV2 windows.
+  static _registeredAppClasses = new Set();
+
+  /**
+   * Register a third-party AppV2 class for WCN management (taskbar, pin, minimize).
+   * Call this from within a Hooks.once('window-controls-next.ready', ...) callback.
+   * @param {Function|string} appClassOrName  The class constructor or its string name.
+   */
+  static registerApp(appClassOrName) {
+    if (!appClassOrName) return;
+    WindowControls._registeredAppClasses.add(appClassOrName);
+  }
+
   static _barrierWatcherInstalled = false;
   static _barrierEnforcerInstalled = false;
 
@@ -512,9 +527,31 @@ class WindowControls {
   }
 
   static _isTargetSheet(app) {
-    // Only affect Document-backed sheets.
-    // Sidebar directories/tabs and other UI apps do not have a Document UUID.
-    return !!WindowControls._getAppDocumentUuid(app);
+    if (!app) return false;
+
+    // Always exclude Dialog (AppV1) and DialogV2 (AppV2) — transient, never taskbar-managed.
+    if (app instanceof Dialog) return false;
+    const DialogV2 = foundry?.applications?.api?.DialogV2;
+    if (DialogV2 && app instanceof DialogV2) return false;
+
+    // Check the third-party opt-in registry first (standalone AppV2 windows registered
+    // by module devs via WindowControls.registerApp()).
+    if (WindowControls._registeredAppClasses.size > 0) {
+      for (const entry of WindowControls._registeredAppClasses) {
+        if (typeof entry === 'function' && app instanceof entry) return true;
+        if (typeof entry === 'string' && app.constructor?.name === entry) return true;
+      }
+    }
+
+    // Document-backed apps: only manage the canonical sheet (document.sheet === app).
+    // Sub-sheets (SheetConfig, PermissionControl, etc.) reference the same document
+    // but are not the primary sheet — exclude them to avoid inheriting pinned state.
+    const uuid = WindowControls._getAppDocumentUuid(app);
+    if (!uuid) return false;
+    const docSheet = app?.document?.sheet ?? app?.object?.sheet;
+    if (docSheet && docSheet !== app) return false;
+
+    return true;
   }
 
   /**
@@ -2275,6 +2312,22 @@ class WindowControls {
         });
       }
 
+      // Signal to third-party modules that WCN is fully initialised and
+      // WindowControls.registerApp() is ready to accept registrations.
+      Hooks.callAll('window-controls-next.ready');
+
+      // Sweep: catch any windows that rendered during a third-party module's ready
+      // callback that ran before ours — _registeredAppClasses was empty at render time.
+      const liveApps = [
+        ...Object.values(ui.windows ?? {}),
+        ...Object.values(foundry?.applications?.instances ?? {}),
+      ];
+      for (const app of liveApps) {
+        if (!WindowControls._isTargetSheet(app)) continue;
+        WindowControls._ensureInlineControlsV2(app);
+        if (WindowControls._isRememberedPinned(app)) WindowControls.applyPinnedMode(app, { mode: 'pin' });
+      }
+
     });
 
     Hooks.on('closeSidebarTab', function (app) {
@@ -2576,6 +2629,10 @@ Hooks.once('setup', () => {
 })
 
 Hooks.once('init', () => {
+  // Expose the class so other modules can call WindowControls.registerApp()
+  // from within their window-controls-next.ready listener.
+  game.modules.get(WindowControls.MODULE_ID).api = WindowControls;
+
   if (game.modules.get('minimize-button')?.active) {
     WindowControls.externalMinimize = true;
   }

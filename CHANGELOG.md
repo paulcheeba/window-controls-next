@@ -6,6 +6,14 @@ The format is based on Keep a Changelog, and this project aims to follow Semanti
 
 Note: The 13.x versions are the reworked Foundry VTT v13+ fork/modernization of the original module.
 
+## [13.1.2.3]
+### Added
+- **Third-party app registration API**: Module developers can now opt standalone AppV2 windows into WCN management (taskbar, pin, minimize) by calling `WindowControls.registerApp(YourAppClass)` inside a `Hooks.once('window-controls-next.ready', ...)` callback. WCN fires the `window-controls-next.ready` hook after full initialisation. Example: `About Time Next` registers `ATEventManagerAppV2` this way so its Event Manager window gets full taskbar/pin support.
+- **Post-registration sweep**: After firing `window-controls-next.ready`, WCN sweeps all currently-open windows and applies controls/pin state to any that now pass `_isTargetSheet`. This ensures windows opened during a third-party module's `ready` callback that ran before WCN's are not missed.
+### Fixed
+- **Sub-sheet isolation**: `_isTargetSheet` now requires a document-backed app to be the document's canonical sheet (`document.sheet === app`). Sub-windows opened from a sheet (Sheet Config, Permission Control, Token Config, etc.) no longer inherit WCN controls or pinned state from their parent.
+- `Dialog` (AppV1) and `DialogV2` (AppV2) instances are now explicitly excluded from WCN management regardless of other conditions.
+
 ## [13.1.2.2]
 ### Fixed
 - **Issue #8 — Compatibility with libWrapper modules** (Mobile Improvements, TouchVTT, GM Screen, etc.): All prototype wraps (`_getHeaderButtons`, `setPosition`, `minimize`, `maximize`, `close` on both AppV1 and AppV2) now detect the real libWrapper at runtime and route through it when present. This eliminates infinite recursion caused by Mobile Improvements' libWrapper LISTENERs on `ApplicationV2.prototype.close/minimize/maximize` conflicting with WCN's direct prototype assignment. When libWrapper is absent, all wraps fall back to WCN's built-in `_wrapMethod` exactly as before — no hard dependency added.
