@@ -2047,16 +2047,21 @@ class WindowControls {
     // DOM after the getApplicationV1HeaderButtons hook fires.  Using a direct
     // prototype wrap (equivalent to libWrapper WRAPPER mode) ensures the injection
     // runs on every render regardless of third-party render order.
-    WindowControls._wrapMethod({
-      target: Application.prototype,
-      method: '_getHeaderButtons',
-      name: 'Application.prototype',
-      wrapper: function (wrapped, ...args) {
-        const buttons = wrapped(...args);
-        WindowControls._injectHeaderControlsV1(this, buttons);
-        return buttons;
-      }
-    });
+    const _ghbWrapper = function (wrapped, ...args) {
+      const buttons = wrapped(...args);
+      WindowControls._injectHeaderControlsV1(this, buttons);
+      return buttons;
+    };
+    if (typeof globalThis.libWrapper !== 'undefined' && !globalThis.libWrapper.is_fallback) {
+      libWrapper.register(WindowControls.MODULE_ID, 'Application.prototype._getHeaderButtons', _ghbWrapper, 'WRAPPER');
+    } else {
+      WindowControls._wrapMethod({
+        target: Application.prototype,
+        method: '_getHeaderButtons',
+        name: 'Application.prototype',
+        wrapper: _ghbWrapper
+      });
+    }
 
     // Keep the hook as a secondary safety net for any AppV1 that doesn't go
     // through Application.prototype._getHeaderButtons (e.g. heavily overriding
@@ -2131,7 +2136,19 @@ class WindowControls {
       WindowControls._applyPinnedHeaderColorFromSetting();
       WindowControls._applyTaskbarWidthFromSetting();
 
-      const wrapAppV1 = (method, fn) => {
+      // Detect real libWrapper (not a shim/polyfill bundled by another module).
+      // When present, route all prototype wraps through it so libWrapper can manage
+      // dispatch order and prevent re-entrancy conflicts with modules like
+      // Mobile Improvements that also wrap these methods via libWrapper.
+      const hasLibWrapper = typeof globalThis.libWrapper !== 'undefined' && !globalThis.libWrapper.is_fallback;
+      if (hasLibWrapper) {
+        WindowControls._logAlways('libWrapper detected — prototype wraps will use libWrapper for conflict-free dispatch.');
+      }
+
+      const wrapAppV1 = (method, fn, type = 'MIXED') => {
+        if (hasLibWrapper) {
+          return libWrapper.register(WindowControls.MODULE_ID, `Application.prototype.${method}`, fn, type);
+        }
         return WindowControls._wrapMethod({
           target: Application.prototype,
           method,
@@ -2140,9 +2157,12 @@ class WindowControls {
         });
       };
 
-      const wrapAppV2 = (method, fn) => {
+      const wrapAppV2 = (method, fn, type = 'MIXED') => {
         const proto = foundry?.applications?.api?.ApplicationV2?.prototype;
         if (!proto) return;
+        if (hasLibWrapper) {
+          return libWrapper.register(WindowControls.MODULE_ID, `foundry.applications.api.ApplicationV2.prototype.${method}`, fn, type);
+        }
         return WindowControls._wrapMethod({
           target: proto,
           method,
@@ -2163,7 +2183,7 @@ class WindowControls {
         return WindowControls._isTargetSheet(app);
       };
 
-      const verboseWrap = (wrapFn, method) => {
+      const verboseWrap = (wrapFn, method, type = 'WRAPPER') => {
         wrapFn(method, function (wrapped, ...args) {
           if (shouldVerboseDebugApp(this)) {
             const first = args?.[0];
@@ -2171,12 +2191,12 @@ class WindowControls {
             WindowControls._debugVerbose(method, WindowControls._debugDescribeApp(this), pos ?? first ?? null);
           }
           return wrapped(...args);
-        });
+        }, type);
       };
 
-      // Positioning hooks (verbose only).
-      verboseWrap(wrapAppV1, 'setPosition');
-      verboseWrap(wrapAppV2, 'setPosition');
+      // Positioning hooks (verbose only). Always-call-wrapped = WRAPPER type.
+      verboseWrap(wrapAppV1, 'setPosition', 'WRAPPER');
+      verboseWrap(wrapAppV2, 'setPosition', 'WRAPPER');
 
       if (WindowControls._isDebugLoggingEnabled()) {
         WindowControls._debug('Debug logging active (barrier contact mode).', {
@@ -2204,20 +2224,20 @@ class WindowControls {
           if (WindowControls._shouldIgnoreApp(this)) return wrapped(...args);
           WindowControls.organizedMinimize(this, settingOrganized);
           return Promise.resolve();
-        });
+        }, 'MIXED');
 
         wrapAppV1('maximize', function (wrapped, ...args) {
           if (WindowControls._shouldIgnoreApp(this)) return wrapped(...args);
           WindowControls.organizedRestore(this, settingOrganized);
           return Promise.resolve();
-        });
+        }, 'MIXED');
 
         wrapAppV1('close', function (wrapped, ...args) {
           WindowControls.organizedClose(this, settingOrganized);
           return wrapped(...args).then(() => {
             WindowControls._removeTaskbarButton(this);
           });
-        });
+        }, 'WRAPPER');
       }
 
       // AppV2 windows require wrapping their lifecycle methods separately.
@@ -2226,19 +2246,19 @@ class WindowControls {
           if (WindowControls._shouldIgnoreApp(this)) return await wrapped(...args);
           WindowControls.organizedMinimize(this, settingOrganized);
           return;
-        });
+        }, 'MIXED');
 
         wrapAppV2('maximize', async function (wrapped, ...args) {
           if (WindowControls._shouldIgnoreApp(this)) return await wrapped(...args);
           WindowControls.organizedRestore(this, settingOrganized);
           return this;
-        });
+        }, 'MIXED');
 
         wrapAppV2('close', async function (wrapped, ...args) {
           WindowControls.organizedClose(this, settingOrganized);
           await wrapped(...args);
           WindowControls._removeTaskbarButton(this);
-        });
+        }, 'WRAPPER');
       }
 
       if (game.settings.get(WindowControls.MODULE_ID, 'rememberPinnedWindows')) {

@@ -6,6 +6,15 @@ The format is based on Keep a Changelog, and this project aims to follow Semanti
 
 Note: The 13.x versions are the reworked Foundry VTT v13+ fork/modernization of the original module.
 
+## [13.1.2.2]
+### Fixed
+- **Issue #8 — Compatibility with libWrapper modules** (Mobile Improvements, TouchVTT, GM Screen, etc.): All prototype wraps (`_getHeaderButtons`, `setPosition`, `minimize`, `maximize`, `close` on both AppV1 and AppV2) now detect the real libWrapper at runtime and route through it when present. This eliminates infinite recursion caused by Mobile Improvements' libWrapper LISTENERs on `ApplicationV2.prototype.close/minimize/maximize` conflicting with WCN's direct prototype assignment. When libWrapper is absent, all wraps fall back to WCN's built-in `_wrapMethod` exactly as before — no hard dependency added.
+- A console info message is logged on startup when libWrapper is detected, confirming which dispatch path is active.
+
+## [13.1.2.1]
+### Fixed
+- **Issue #7 — Null-guard on string helpers**: `curateId`, `curateTitle`, and `uncurateTitle` now guard against `null`/non-string input that caused errors on sheets with missing titles. (Credit: Andersants)
+
 ## [13.1.2.0]
 ### Added
 - **Canvas-only taskbar width** setting: the taskbar can now stop at the sidebar's left edge instead of spanning the full viewport, avoiding overlap with the chat/notifications column. A `ResizeObserver` keeps the boundary accurate when the sidebar resizes or collapses.
