@@ -13,7 +13,7 @@ Window Taskbar and Window Buttons: Minimize and Pin floating Windows to a top or
 Dock a fixed taskbar above or below the Foundry canvas. It nudges the UI and canvas resizes correctly.
 - Taskbar appearance is configurable, including taskbar background color and taskbar scrollbar color.
 
-<img width="548" height="45" alt="image" src="https://github.com/user-attachments/assets/670ed316-6bd9-4a1d-9e21-acc3aeb12e4d" />
+<img width="364" height="43" alt="image" src="https://github.com/user-attachments/assets/cac2748b-1b60-40ab-be05-62f5f9207119" />
 
 ### Taskbar Buttons
 Taskbar buttons are sorted (pinned first, then type, then title), show a tooltip with the full title, and support hover preview. When there are too many buttons, the taskbar button strip scrolls horizontally and shows a thin scrollbar.
