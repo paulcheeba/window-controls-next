@@ -1144,14 +1144,14 @@ class WindowControls {
           action: () => { void WindowControls._restoreFromTaskbar(app); }
         },
         {
-          label: game.i18n.localize('WindowControls.ContextMaximize'),
-          icon: 'fa-solid fa-expand',
-          action: () => { void WindowControls._maximizeToViewport(app); }
-        },
-        {
           label: game.i18n.localize('WindowControls.DefaultSize'),
           icon: 'fa-solid fa-compress',
           action: () => { void WindowControls._restoreDefaultSize(app); }
+        },
+        {
+          label: game.i18n.localize('WindowControls.ContextMaximize'),
+          icon: 'fa-solid fa-expand',
+          action: () => { void WindowControls._maximizeToViewport(app); }
         },
       ];
 
@@ -1228,15 +1228,17 @@ class WindowControls {
     await new Promise(r => requestAnimationFrame(r));
     const el = WindowControls._getElement(app);
     if (!el) return;
-    const taskbarPx = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--wc-taskbar-height')) || 0;
-    const isTop    = document.body.classList.contains('wc-taskbar-top');
-    const isBottom = document.body.classList.contains('wc-taskbar-bottom');
-    const top    = isTop    ? taskbarPx : 0;
-    const bottom = isBottom ? taskbarPx : 0;
-    el.style.left   = '0px';
-    el.style.top    = `${top}px`;
-    el.style.width  = `${window.innerWidth}px`;
-    el.style.height = `${window.innerHeight - top - bottom}px`;
+    const board  = document.getElementById('board');
+    const boardW = board ? board.offsetWidth  : window.innerWidth;
+    const boardH = board ? board.offsetHeight : window.innerHeight;
+    const maxW = Math.round(boardW * 0.6);
+    const maxH = Math.round(boardH * 0.8);
+    if (typeof app.setPosition === 'function') {
+      app.setPosition({ width: maxW, height: maxH });
+    } else {
+      el.style.width  = `${maxW}px`;
+      el.style.height = `${maxH}px`;
+    }
   }
 
   static _getDefaultSize(app) {
@@ -1385,16 +1387,16 @@ class WindowControls {
         }
       }));
       controls.appendChild(makeControl({
-        cls: 'wc-maximize',
-        icon: 'fa-solid fa-expand',
-        titleKey: 'WindowControls.Maximize',
-        onClick: async () => { await WindowControls._maximizeToViewport(app); }
-      }));
-      controls.appendChild(makeControl({
         cls: 'wc-default-size',
         icon: 'fa-solid fa-compress',
         titleKey: 'WindowControls.DefaultSize',
         onClick: async () => { await WindowControls._restoreDefaultSize(app); }
+      }));
+      controls.appendChild(makeControl({
+        cls: 'wc-maximize',
+        icon: 'fa-solid fa-expand',
+        titleKey: 'WindowControls.Maximize',
+        onClick: async () => { await WindowControls._maximizeToViewport(app); }
       }));
     }
 
@@ -1869,17 +1871,17 @@ class WindowControls {
       });
       newButtons.push({
         label: "",
-        class: "wc-maximize",
-        icon: "fa-solid fa-expand",
-        _wcn: true,
-        onclick: () => { void WindowControls._maximizeToViewport(app); }
-      });
-      newButtons.push({
-        label: "",
         class: "wc-default-size",
         icon: "fa-solid fa-compress",
         _wcn: true,
         onclick: () => { void WindowControls._restoreDefaultSize(app); }
+      });
+      newButtons.push({
+        label: "",
+        class: "wc-maximize",
+        icon: "fa-solid fa-expand",
+        _wcn: true,
+        onclick: () => { void WindowControls._maximizeToViewport(app); }
       });
     }
 
