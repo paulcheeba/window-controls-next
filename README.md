@@ -21,7 +21,7 @@ Taskbar buttons are sorted (pinned first, then type, then title), show a tooltip
 ### Minimize, Maximize & Default Size
 Header buttons (and the taskbar right-click menu) let you minimize a sheet instantly to a taskbar button, resize it to 60% × 80% of the canvas area, or snap it back to its configured default dimensions.
 
-<img width="805" height="39" alt="image" src="https://github.com/user-attachments/assets/cc6b9614-7df8-40cf-93cb-9ffeebbb18d1" />
+<img width="538" height="62" alt="image" src="https://github.com/user-attachments/assets/3dcdb099-420b-472d-8879-fbee01f15c0c" />
 
 ### Taskbar Right-Click Context Menu
 Right-clicking any taskbar button opens a context menu with: Restore, Maximize, Default Size, Pin/Unpin, and Close.
@@ -33,7 +33,7 @@ An optional setting stops the taskbar at the sidebar's left edge so it never ove
 Pin a sheet so it stays available on the taskbar and can optionally be restored across sessions.
 - Pinned sheet header appearance is configurable, including header overlay color that also affects the taskbar button color.
 
-<img width="808" height="42" alt="image" src="https://github.com/user-attachments/assets/58816dc4-4679-4ef3-b0f7-745a0144cae3" />
+<img width="484" height="48" alt="image" src="https://github.com/user-attachments/assets/63abed18-797e-41aa-818a-e2135e7afc6c" />
 
 ### Quick view on hover
 Hover your mouse over a minimized window tab for a quick view of the sheet without reopening it.
