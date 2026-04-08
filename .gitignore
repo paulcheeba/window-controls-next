@@ -14,6 +14,8 @@ desktop.ini
 /.github/devFolder/console-logs/
 /.github/devFolder/referenceDocs/
 /.github/devFolder/AI Chat Sessions/
+/.github/devFolder/node_modules/
+/.github/devFolder/package-lock.json
 
 /.github/devFolder/posts/discordReleasePosts.md
 /.github/devFolder/posts/patreonPosts.md
