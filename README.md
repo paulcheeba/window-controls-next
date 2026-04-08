@@ -10,23 +10,18 @@ Window Taskbar and Window Buttons: Minimize and Pin floating Windows to a top or
 ## Features
 
 ### Taskbar (Top/Bottom)
-Dock a fixed taskbar above or below the Foundry UI. It nudges the UI and canvas resizes correctly.
+Dock a fixed taskbar above or below the Foundry canvas. It nudges the UI and canvas resizes correctly.
 - Taskbar appearance is configurable, including taskbar background color and taskbar scrollbar color.
 
 <img width="548" height="45" alt="image" src="https://github.com/user-attachments/assets/670ed316-6bd9-4a1d-9e21-acc3aeb12e4d" />
 
 ### Taskbar Buttons
-Taskbar buttons are sorted (pinned first, then type, then title), show a tooltip with the full title, and support hover preview.
+Taskbar buttons are sorted (pinned first, then type, then title), show a tooltip with the full title, and support hover preview. When there are too many buttons, the taskbar button strip scrolls horizontally and shows a thin scrollbar.
 
-When there are too many buttons, the taskbar button strip scrolls horizontally and shows a thin scrollbar.
-
-### Minimize
-Adds a minimize button to supported sheets. Minimize is instant: the sheet is hidden and represented by a taskbar button.
+### Minimize, Maximize & Default Size
+Header buttons (and the taskbar right-click menu) let you minimize a sheet instantly to a taskbar button, resize it to 60% × 80% of the canvas area, or snap it back to its configured default dimensions.
 
 <img width="805" height="39" alt="image" src="https://github.com/user-attachments/assets/cc6b9614-7df8-40cf-93cb-9ffeebbb18d1" />
-
-### Maximize & Default Size
-Header buttons (and the taskbar right-click menu) let you instantly maximize a window to fill the available canvas area, or snap it back to its configured default dimensions.
 
 ### Taskbar Right-Click Context Menu
 Right-clicking any taskbar button opens a context menu with: Restore, Maximize, Default Size, Pin/Unpin, and Close.
@@ -51,7 +46,7 @@ The taskbar can be set to Canvas width or Full width depending on your preferenc
 
 ## Third-Party Module Integration
 
-Standalone AppV2 windows (those not backed by a Foundry Document) are not managed by WCN by default. Module developers can opt their windows in by calling `WindowControls.registerApp()` inside a `window-controls-next.ready` hook callback.
+Standalone AppV2 windows (those not backed by a Foundry Document) are not managed by WCN by default. Module developers can opt their applications in by calling `WindowControls.registerApp()` inside a `window-controls-next.ready` hook callback.
 
 ### Examples
 
@@ -69,22 +64,10 @@ The `?.api` guard is recommended so your module won't error if WCN is not instal
 **Real-world example** — The [About Time Next](https://github.com/paulcheeba/about-time-next) module includes an `ATEventManagerAppV2` window that has no document backing. To have WCN manage it (taskbar, pin, minimize) register its `ATEventManagerAppV2` window in `main.js`:
 
 ```js
-// At the top of about-time.js, add the import:
-import { ATEventManagerAppV2 } from './module/ATEventManagerAppV2.js';
-
-// Then at top level alongside the other Hooks registrations:
+// At top level alongside the other Hooks registrations:
 Hooks.once('window-controls-next.ready', () => {
   const WCN = game.modules.get('window-controls-next')?.api;
   if (WCN) WCN.registerApp(ATEventManagerAppV2);
-});
-```
-
-If importing the class isn't practical, pass the class name as a string instead — WCN will match against `app.constructor.name` at runtime:
-
-```js
-Hooks.once('window-controls-next.ready', () => {
-  const WCN = game.modules.get('window-controls-next')?.api;
-  if (WCN) WCN.registerApp('ATEventManagerAppV2');
 });
 ```
 
