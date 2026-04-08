@@ -1407,7 +1407,10 @@ class WindowControls {
         titleKey: 'WindowControls.Pin',
         onClick: async () => {
           WindowControls.applyPinnedMode(app);
-          WindowControls.applyPinnedMode(Object.values(ui.windows).find(w => w.targetApp?.appId === app.appId));
+          if (app.appId != null) {
+            const linked = Object.values(ui.windows).find(w => w.targetApp?.appId === app.appId);
+            if (linked) WindowControls.applyPinnedMode(linked);
+          }
         }
       }));
     }
@@ -1894,7 +1897,10 @@ class WindowControls {
         _wcn: true,
         onclick: () => {
           WindowControls.applyPinnedMode(app);
-          WindowControls.applyPinnedMode(Object.values(ui.windows).find(w => w.targetApp?.appId === app.appId));
+          if (app.appId != null) {
+            const linked = Object.values(ui.windows).find(w => w.targetApp?.appId === app.appId);
+            if (linked) WindowControls.applyPinnedMode(linked);
+          }
         }
       });
     }
