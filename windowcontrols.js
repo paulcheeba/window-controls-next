@@ -1,5 +1,13 @@
 class WindowControls {
 
+  // Known default sizes for Foundry core sheets that don't declare DEFAULT_OPTIONS.position
+  // or defaultOptions width/height. Keyed by constructor name. System sheet subclasses
+  // (e.g. JournalEntrySheet5e) are included since they inherit the same default dimensions.
+  static _KNOWN_DEFAULT_SIZES = {
+    'JournalEntrySheet':    { width: 960, height: 800 },
+    'JournalEntrySheet5e':  { width: 960, height: 800 },
+  };
+
   static MODULE_ID = 'window-controls-next';
 
   static externalMinimize = false;
@@ -13,6 +21,10 @@ class WindowControls {
   static cssMinimizedSize = 150;
   static cssMinimizedBottomBaseline = 70;
   static cssMinimizedTopBaseline = 0;
+  // Maximum z-index WCN will assign to floating windows.
+  // Keeps windows below --z-index-tooltip (9999) and --z-index-notification (99999).
+  // --z-index-window baseline is 100; 199 gives 100 window slots before the ceiling.
+  static WCN_Z_MAX = 199;
   static cssTopBarLeftStart = 120;
   static cssTopBarPersistentLeftStart = -5;
   static cssBottomBarLeftStart = 250;
@@ -804,9 +816,35 @@ class WindowControls {
 
   static _bringToFront(app) {
     if (!app) return;
-    // AppV2: bringToFront is the supported method. AppV1 historically used bringToTop.
-    if (typeof app.bringToFront === 'function') return app.bringToFront();
-    if (typeof app.bringToTop === 'function') return app.bringToTop();
+
+    // Get the element before calling Foundry's bringToFront so we can identify
+    // it in the peer list after the call.
+    const el = app.element?.[0] instanceof HTMLElement ? app.element[0]
+      : app.element instanceof HTMLElement ? app.element : null;
+
+    // Always call Foundry's implementation first to keep its internal counter in sync.
+    if (typeof app.bringToFront === 'function') app.bringToFront();
+    else if (typeof app.bringToTop === 'function') app.bringToTop();
+
+    if (!el) return;
+
+    // After Foundry assigns a z-index, clamp to peerMax + 1 so windows never
+    // climb into tooltip / UI-chrome z territory.
+    const base = parseInt(
+      getComputedStyle(document.documentElement).getPropertyValue('--z-index-window')
+    ) || 100;
+
+    const peerEls = [
+      ...Object.values(ui.windows ?? {}).map(a => a.element?.[0] ?? a.element),
+      ...Array.from(foundry?.applications?.instances?.values?.() ?? []).map(a => a.element)
+    ].filter(e => e instanceof HTMLElement && e !== el);
+
+    const peerMax = peerEls.reduce((max, e) => {
+      const z = parseInt(getComputedStyle(e).zIndex);
+      return isNaN(z) ? max : Math.max(max, z);
+    }, base);
+
+    el.style.zIndex = String(Math.min(peerMax + 1, WindowControls.WCN_Z_MAX));
   }
 
   static _getTaskbarSetting() {
@@ -1192,7 +1230,7 @@ class WindowControls {
       menu.style.top = above
         ? (btnRect.top - menuH - 4) + 'px'
         : (btnRect.bottom + 4) + 'px';
-      menu.style.zIndex = '100001';
+      menu.style.zIndex = String(WindowControls.WCN_Z_MAX + 1);
 
       // Wire up click handlers.
       menu.querySelectorAll('li.context-item').forEach((li, i) => {
@@ -1253,7 +1291,33 @@ class WindowControls {
     // Last resort: options recorded at instantiation time.
     const w = app?.options?.width;
     const h = app?.options?.height;
-    return { width: (w && w !== 'auto') ? w : undefined, height: (h && h !== 'auto') ? h : undefined };
+    if ((w && w !== 'auto') || (h && h !== 'auto')) {
+      return { width: (w && w !== 'auto') ? w : undefined, height: (h && h !== 'auto') ? h : undefined };
+    }
+    // Known Foundry core sheet defaults (sheets that declare no size in their options).
+    const knownName = app?.constructor?.name;
+    // Per-world learned defaults take priority — they reflect the actual system default for
+    // this world (captured automatically on the first ever render of each sheet class).
+    if (knownName) {
+      const learnedAll = (() => { try { return game?.settings?.get(WindowControls.MODULE_ID, 'learnedSheetDefaults'); } catch { return null; } })();
+      if (learnedAll?.[knownName]) return { ...learnedAll[knownName] };
+    }
+    if (knownName && WindowControls._KNOWN_DEFAULT_SIZES[knownName]) {
+      return { ...WindowControls._KNOWN_DEFAULT_SIZES[knownName] };
+    }
+    // Final fallback: CSS min-width/min-height (e.g. journals in v14 declare no position
+    // defaults but do set min-width/height via stylesheet — use those as the natural default).
+    const el = app?.element instanceof HTMLElement ? app.element
+      : app?.element?.[0] instanceof HTMLElement ? app.element[0] : null;
+    if (el) {
+      const cs = getComputedStyle(el);
+      const minW = parseFloat(cs.minWidth);
+      const minH = parseFloat(cs.minHeight);
+      if (minW > 0 || minH > 0) {
+        return { width: minW > 0 ? minW : undefined, height: minH > 0 ? minH : undefined };
+      }
+    }
+    return { width: undefined, height: undefined };
   }
 
   static async _restoreDefaultSize(app) {
@@ -1262,6 +1326,14 @@ class WindowControls {
       await new Promise(r => requestAnimationFrame(r));
     }
     const size = WindowControls._getDefaultSize(app);
+    if (!size.width && !size.height) {
+      const name = app?.constructor?.name ?? 'this sheet type';
+      ui?.notifications?.info?.(
+        `Window Controls: No default size has been captured for "${name}" yet. ` +
+        `Open any sheet of this type once and WCN will record its dimensions automatically.`
+      );
+      return;
+    }
     if (typeof app.setPosition === 'function') {
       app.setPosition(size);
     } else {
@@ -1271,6 +1343,40 @@ class WindowControls {
         if (size.height) el.style.height = `${size.height}px`;
       }
     }
+  }
+
+  /**
+   * On the first render of a sheet class never seen before in this world, capture its
+   * actual rendered dimensions as the learned default size for that class.  Only GMs
+   * may write world settings.  Runs asynchronously after the next animation frame so
+   * the browser has finished laying out the window.
+   */
+  static _maybeCaptureFirstRenderSize(app) {
+    if (!WindowControls._isTargetSheet(app)) return;
+    if (!game.user?.isGM) return;
+    const name = app?.constructor?.name;
+    if (!name) return;
+    let learned;
+    try {
+      learned = game.settings.get(WindowControls.MODULE_ID, 'learnedSheetDefaults') ?? {};
+    } catch { return; }
+    if (learned[name]) return;
+    requestAnimationFrame(() => {
+      const el = WindowControls._getElement(app);
+      if (!(el instanceof HTMLElement)) return;
+      const w = el.offsetWidth;
+      const h = el.offsetHeight;
+      if (!w || !h) return;
+      // Re-read in case another render already stored this class.
+      let current;
+      try {
+        current = game.settings.get(WindowControls.MODULE_ID, 'learnedSheetDefaults') ?? {};
+      } catch { return; }
+      if (current[name]) return;
+      const updated = { ...current, [name]: { width: w, height: h } };
+      game.settings.set(WindowControls.MODULE_ID, 'learnedSheetDefaults', updated)?.catch?.(() => {});
+      WindowControls._debug(`Learned default size for "${name}": ${w}×${h}`);
+    });
   }
 
   static _restoreFromTaskbar(app) {
@@ -1562,15 +1668,18 @@ class WindowControls {
           sheet instanceof foundry.applications.api.ApplicationV2);
 
         if (isAppV2 && isTaskbarMode && typeof sheet.maximize === 'function') {
-          // AppV2's render(force=true) calls maximize().then(bringToFront()) after all hooks
-          // complete, which overrides our hide. Override maximize to a no-op for this render
-          // so the window stays hidden; restore and minimise explicitly afterwards.
-          const _origMaximize = sheet.maximize;
-          sheet.maximize = async function() { return this; };
+          // AppV2's render(force=true) fires maximize().then(bringToFront()) as a floating
+          // promise AFTER render() resolves (and after our finally). Override both to no-ops
+          // for the duration so the hidden window never claims a high z-index slot.
+          const _origMaximize    = sheet.maximize;
+          const _origBringToFront = sheet.bringToFront;
+          sheet.maximize     = async function() { return this; };
+          sheet.bringToFront = function()       { return this; };
           try {
             await sheet.render(true);
           } finally {
-            sheet.maximize = _origMaximize;
+            sheet.maximize     = _origMaximize;
+            sheet.bringToFront = _origBringToFront;
           }
           WindowControls.organizedMinimize(sheet, taskbarSetting);
         } else {
@@ -2167,6 +2276,15 @@ class WindowControls {
       default: false
     });
 
+    // Per-world learned sheet default sizes: keyed by constructor name, captured on first render.
+    // Hidden from the standard settings UI; populated automatically by _maybeCaptureFirstRenderSize.
+    game.settings.register(WindowControls.MODULE_ID, 'learnedSheetDefaults', {
+      scope: 'world',
+      config: false,
+      type: Object,
+      default: {}
+    });
+
   }
 
   static initHooks() {
@@ -2206,6 +2324,7 @@ class WindowControls {
 
     Hooks.on('renderApplicationV2', (app, element) => {
       WindowControls._ensureInlineControlsV2(app, element);
+      WindowControls._maybeCaptureFirstRenderSize(app);
 
       // Enforce single open instance per persisted Document UUID.
       void WindowControls._enforceSingleInstanceByPersistentId(app);
@@ -2237,6 +2356,7 @@ class WindowControls {
     Hooks.on('renderApplicationV1', (app, html) => {
       const el = html?.[0];
       if (!(el instanceof HTMLElement)) return;
+      WindowControls._maybeCaptureFirstRenderSize(app);
 
       // One-time notification: remind users that AppV1 sheets are deprecated in
       // Foundry v13 and WCN header controls may not appear until the system/module
@@ -2428,6 +2548,20 @@ class WindowControls {
           WindowControls.minimizeAll();
         });
       }
+
+      // Log any per-world learned sheet default sizes that have been captured so far.
+      try {
+        const learned = game.settings.get(WindowControls.MODULE_ID, 'learnedSheetDefaults') ?? {};
+        const entries = Object.entries(learned);
+        if (entries.length) {
+          WindowControls._logAlways(
+            `Learned sheet defaults for this world (${entries.length}):`,
+            Object.fromEntries(entries.map(([k, v]) => [k, `${v.width}×${v.height}`]))
+          );
+        } else {
+          WindowControls._logAlways('No learned sheet defaults recorded for this world yet.');
+        }
+      } catch { /* ignore */ }
 
       // Signal to third-party modules that WCN is fully initialised and
       // WindowControls.registerApp() is ready to accept registrations.
@@ -2627,6 +2761,136 @@ class WindowControls {
     }
   }
 
+  /**
+   * Open the "Learned Sheet Defaults" management dialog (GM only).
+   * Shows a table of captured class-name → width×height pairs with per-row Edit
+   * and a Clear All footer action.
+   */
+  static async _showSheetDefaultsDialog() {
+    const DialogV2 = foundry?.applications?.api?.DialogV2;
+    if (!DialogV2) {
+      ui?.notifications?.warn?.('Window Controls: DialogV2 not available in this version of Foundry.');
+      return;
+    }
+
+    let learned;
+    try { learned = game.settings.get(WindowControls.MODULE_ID, 'learnedSheetDefaults') ?? {}; }
+    catch { learned = {}; }
+    const entries = Object.entries(learned).sort(([a], [b]) => a.localeCompare(b));
+
+    let bodyHtml;
+    if (!entries.length) {
+      bodyHtml = `<p class="notification info">No default sizes have been captured yet. Open any sheet once and WCN will record its dimensions automatically.</p>`;
+    } else {
+      const rows = entries.map(([name, size]) =>
+        `<tr>
+          <td class="wc-dsd-name">${name}</td>
+          <td class="wc-dsd-size">${size.width} &times; ${size.height}</td>
+          <td class="wc-dsd-actions">
+            <button type="button" class="wc-dsd-edit-btn" data-action="editEntry" data-sheet-name="${name}" title="Edit">
+              <i class="fas fa-pencil"></i>
+            </button>
+          </td>
+        </tr>`
+      ).join('');
+      bodyHtml = `
+        <table class="wc-defaults-table">
+          <thead><tr><th>Sheet Type</th><th>Size (w &times; h)</th><th></th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+        <div class="wc-dsd-clear-row">
+          <button type="button" class="wc-dsd-clear-btn" data-action="clearAll" title="Remove all captured sizes">
+            <i class="fas fa-trash"></i> Clear All
+          </button>
+        </div>`;
+    }
+
+    await DialogV2.wait({
+      window: { title: 'WCN: Learned Sheet Defaults', positioned: true },
+      position: { width: 540 },
+      content: `<div class="wc-sheet-defaults-dialog">${bodyHtml}</div>`,
+      rejectClose: false,
+      buttons: [{ action: 'close', label: 'Close', default: true, callback: () => {} }],
+      actions: {
+        editEntry: async function(event, target) {
+          const name = target.dataset.sheetName;
+          await this.close({ animate: false });
+          await WindowControls._showEditSheetDefaultDialog(name);
+          await WindowControls._showSheetDefaultsDialog();
+        },
+        clearAll: async function(event, target) {
+          const confirmed = await DialogV2.confirm({
+            window: { title: 'Clear All Learned Defaults?', positioned: true },
+            content: '<p>Remove all captured sheet default sizes? They will be re-learned the next time each sheet type is opened.</p>',
+            yes: { label: 'Clear All', icon: 'fas fa-trash', callback: () => true },
+            no:  { label: 'Cancel',    callback: () => false },
+            rejectClose: false,
+          });
+          if (confirmed) {
+            await game.settings.set(WindowControls.MODULE_ID, 'learnedSheetDefaults', {});
+            await this.close({ animate: false });
+            await WindowControls._showSheetDefaultsDialog();
+          }
+        }
+      }
+    });
+  }
+
+  /**
+   * Open an inline edit dialog for a single captured sheet default.
+   * @param {string} sheetName  Constructor name of the sheet class to edit.
+   */
+  static async _showEditSheetDefaultDialog(sheetName) {
+    const DialogV2 = foundry?.applications?.api?.DialogV2;
+    if (!DialogV2) return;
+
+    let learned;
+    try { learned = game.settings.get(WindowControls.MODULE_ID, 'learnedSheetDefaults') ?? {}; }
+    catch { learned = {}; }
+    const current = learned[sheetName] ?? { width: 800, height: 600 };
+
+    const result = await DialogV2.input({
+      window: { title: `Edit Default: ${sheetName}`, positioned: true },
+      position: { width: 360 },
+      content: `
+        <div class="wc-edit-default-dialog">
+          <p>Override the learned default size for <strong>${sheetName}</strong>.</p>
+          <div class="form-group">
+            <label>Width (px)</label>
+            <div class="form-fields">
+              <input type="number" name="width" min="100" max="3840" step="1" value="${current.width}">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Height (px)</label>
+            <div class="form-fields">
+              <input type="number" name="height" min="100" max="2160" step="1" value="${current.height}">
+            </div>
+          </div>
+        </div>`,
+      ok: {
+        label: 'Save',
+        icon: 'fas fa-save',
+        callback: (event, button) => ({
+          width:  button.form.elements.width.valueAsNumber,
+          height: button.form.elements.height.valueAsNumber
+        })
+      },
+      rejectClose: false
+    });
+
+    if (!result) return;
+    const { width: w, height: h } = result;
+    if (!w || !h || w < 100 || h < 100) {
+      ui?.notifications?.warn?.('Window Controls: Width and Height must be at least 100 px.');
+      return;
+    }
+    let cur;
+    try { cur = game.settings.get(WindowControls.MODULE_ID, 'learnedSheetDefaults') ?? {}; }
+    catch { cur = {}; }
+    await game.settings.set(WindowControls.MODULE_ID, 'learnedSheetDefaults', { ...cur, [sheetName]: { width: w, height: h } });
+  }
+
   static _organizeSettingsConfig(html) {
     if (!html) return;
 
@@ -2649,8 +2913,8 @@ class WindowControls {
     if (!moduleRoot?.length) moduleRoot = organizedMinimize.parent();
     if (!moduleRoot?.length) return;
 
-    // Remove previous injected headers if SettingsConfig re-renders.
-    moduleRoot.find('.wc-settings-header').remove();
+    // Remove previous injected headers and GM-only buttons if SettingsConfig re-renders.
+    moduleRoot.find('.wc-settings-header, .wc-settings-btn-group').remove();
 
     const taskbarKeys = ['organizedMinimize', 'taskbarWidth', 'minimizeButton', 'defaultSizeButton', 'maximizeButton', 'maximizeWidth', 'maximizeHeight', 'clickOutsideMinimize', 'taskbarColor', 'taskbarScrollbarColor', 'debugLogging', 'debugVerbose'];
     const pinningKeys = ['pinnedButton', 'pinnedHeaderColor', 'pinnedDoubleTapping', 'rememberPinnedWindows'];
@@ -2662,7 +2926,26 @@ class WindowControls {
     moduleRoot.append(taskbarHeader);
     for (const key of taskbarKeys) {
       const g = getGroup(key);
-      if (g?.length) moduleRoot.append(g);
+      if (g?.length) {
+        moduleRoot.append(g);
+        // Inject the "Sheet Defaults" button row immediately after the Default Size toggle, GM only.
+        if (key === 'defaultSizeButton' && game.user?.isGM) {
+          const $btn = $(`
+            <div class="form-group wc-settings-btn-group">
+              <label>Learned Sheet Defaults</label>
+              <div class="form-fields">
+                <button type="button" class="wc-sheet-defaults-open-btn">
+                  <i class="fas fa-ruler-combined"></i> View / Edit Defaults
+                </button>
+              </div>
+              <p class="hint">View, edit, or clear the per-world default sizes captured the first time each sheet type is opened.</p>
+            </div>`);
+          $btn.find('.wc-sheet-defaults-open-btn').on('click', () => {
+            void WindowControls._showSheetDefaultsDialog();
+          });
+          moduleRoot.append($btn);
+        }
+      }
     }
 
     moduleRoot.append(pinningHeader);

@@ -23,6 +23,13 @@ Header buttons (and the taskbar right-click menu) let you minimize a sheet insta
 
 <img width="538" height="62" alt="image" src="https://github.com/user-attachments/assets/3dcdb099-420b-472d-8879-fbee01f15c0c" />
 
+### Learned Sheet Defaults (per world)
+The first time any sheet type opens in a world, WCN automatically captures its rendered dimensions as the **learned default** for that class. This is per-world and stored in world settings, so each world has its own table — useful for systems like D&D 5e that include non-standard sheet types (Group Sheet, Vehicle Sheet, etc.) with different natural proportions.
+
+- **Automatic capture:** No setup required. Open any sheet once and WCN records its width and height. GM permission is required to save.
+- **View / Edit / Clear:** GMs can open the *Learned Sheet Defaults* dialog directly from Module Settings (under the Default Size Button toggle). The dialog lists every captured class with its recorded size, an **Edit** button to override individual entries, and a **Clear All** button to start fresh.
+- **Fallback:** If no default has been recorded yet and the Default Size button is clicked, WCN shows a notification advising the user to open a sheet of that type once to capture it.
+
 ### Taskbar Right-Click Context Menu
 Right-clicking any taskbar button opens a context menu with: Restore, Maximize, Default Size, Pin/Unpin, and Close.
 

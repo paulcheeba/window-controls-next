@@ -10,6 +10,10 @@ Note: The 13.x versions are the reworked Foundry VTT v13+ fork/modernization of 
 ### Added
 - **Maximize Width / Height settings**: Two new client settings (10–100%, step 5) control the size the Maximize button resizes a window to. Defaults remain 60% wide × 80% tall of the `#board` area.
 - **Default Size Button / Maximize Button visibility settings**: Independent enabled/disabled toggles for the Default Size and Maximize header buttons, matching the existing Minimize Button setting. All three default to enabled. The new settings appear in the Taskbar section of module settings, grouped after Minimize Button.
+- **Learned Sheet Defaults (per world)**: The first time any sheet type renders in a world, WCN automatically captures its dimensions as the learned default for that class. Stored as a hidden world setting keyed by constructor name, so each world builds its own table independently. GM permission is required to save captures.
+- **View / Edit / Clear defaults dialog**: GMs see a *View / Edit Defaults* button directly below the Default Size Button toggle in Module Settings. The dialog lists every captured class with its recorded size. Each row has an **Edit** button to override dimensions, and a **Clear All** button (with confirmation) to reset the table.
+- **Startup log of learned defaults**: On world load, WCN prints all captured learned defaults (or a "none yet" message) to the console for easy inspection.
+- **Default Size fallback notification**: If the Default Size button is clicked for a sheet type with no captured default, WCN shows a `ui.notifications.info` message advising the user to open a sheet of that type once so WCN can record it automatically.
 
 ## [13.1.2.4]
 ### Changed
