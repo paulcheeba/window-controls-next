@@ -7,11 +7,64 @@ The format is based on Keep a Changelog, and this project aims to follow Semanti
 Note: The 13.x versions are the reworked Foundry VTT v13+ fork/modernization of the original module. 14.x versions target Foundry VTT v14.
 
 ## [14.0.0.0]
+> First public release for Foundry VTT v14. Incorporates all changes from pre-release beta versions 13.1.2.0 – 13.1.2.5.
+
 ### Changed
 - **Foundry VTT v14 compatibility**: Verified against Foundry VTT v14. Compatibility updated to minimum v13, verified v14, maximum v14.
 - **English-only localisation**: All non-English language files (de, es, ja) have been removed. Foundry VTT's AI content policy prohibits AI-generated translations, and no human-verified translations are currently available. The module now ships with English only (`lang/en.json`). Community-contributed translations are welcome via pull request.
 
-## [13.1.2.5]
+#### Included from beta 13.1.2.5
+##### Added
+- **Maximize Width / Height settings**: Two new client settings (10–100%, step 5) control the size the Maximize button resizes a window to. Defaults remain 60% wide × 80% tall of the `#board` area.
+- **Default Size Button / Maximize Button visibility settings**: Independent enabled/disabled toggles for the Default Size and Maximize header buttons, matching the existing Minimize Button setting. All three default to enabled. The new settings appear in the Taskbar section of module settings, grouped after Minimize Button.
+- **Learned Sheet Defaults (per world)**: The first time any sheet type renders in a world, WCN automatically captures its dimensions as the learned default for that class. Stored as a hidden world setting keyed by constructor name, so each world builds its own table independently. GM permission is required to save captures.
+- **View / Edit / Clear defaults dialog**: GMs see a *View / Edit Defaults* button directly below the Default Size Button toggle in Module Settings. The dialog lists every captured class with its recorded size. Each row has an **Edit** button to override dimensions, and a **Clear All** button (with confirmation) to reset the table.
+- **Startup log of learned defaults**: On world load, WCN prints all captured learned defaults (or a "none yet" message) to the console for easy inspection.
+- **Default Size fallback notification**: If the Default Size button is clicked for a sheet type with no captured default, WCN shows a `ui.notifications.info` message advising the user to open a sheet of that type once so WCN can record it automatically.
+
+#### Included from beta 13.1.2.4
+##### Changed
+- **Maximize behaviour**: The maximize button no longer snaps the window to a fixed corner. It now resizes the window in place to 60% × 80% of the `#board` area via `setPosition()`, so the window remains draggable and the size sticks on drag.
+- **Button order**: Default Size and Maximize buttons are now ordered Default Size → Maximize (left to right) for logical progression.
+##### Fixed
+- **Pinned journal flash on load**: Remembered pinned AppV2 windows (journals and other complex sheets) were visible on world load and not being hidden to the taskbar. Root cause: Foundry's `ApplicationV2.render(force=true)` unconditionally calls `maximize().then(bringToFront())` after all render hooks complete, overriding our hook's `display:none`. The fix temporarily overrides `maximize` to a no-op on the sheet instance before calling `render`, then restores it and explicitly minimises after the render promise resolves — eliminating the race entirely.
+- **Sweep after `window-controls-next.ready`**: Fixed iteration over `foundry.applications.instances` (a `Map`) — `Object.values()` on a Map yields empty results; now uses `Array.from(instances.values())`.
+- **Pin toggle cross-contamination**: Clicking pin on an AppV2 window was accidentally toggling unrelated AppV1 windows. Root cause: the linked-window lookup used `appId` equality, but AppV2 apps have no `appId` (`undefined === undefined` matched any AppV1 window with no `targetApp`). The lookup is now guarded to only run when `appId` is a real value.
+
+#### Included from beta 13.1.2.3
+##### Added
+- **Third-party app registration API**: Module developers can now opt standalone AppV2 windows into WCN management (taskbar, pin, minimize) by calling `WindowControls.registerApp(YourAppClass)` inside a `Hooks.once('window-controls-next.ready', ...)` callback. WCN fires the `window-controls-next.ready` hook after full initialisation.
+- **Post-registration sweep**: After firing `window-controls-next.ready`, WCN sweeps all currently-open windows and applies controls/pin state to any that now pass `_isTargetSheet`. This ensures windows opened during a third-party module's `ready` callback that ran before WCN's are not missed.
+##### Fixed
+- **Sub-sheet isolation**: `_isTargetSheet` now requires a document-backed app to be the document's canonical sheet (`document.sheet === app`). Sub-windows opened from a sheet (Sheet Config, Permission Control, Token Config, etc.) no longer inherit WCN controls or pinned state from their parent.
+- `Dialog` (AppV1) and `DialogV2` (AppV2) instances are now explicitly excluded from WCN management regardless of other conditions.
+
+#### Included from beta 13.1.2.2
+##### Fixed
+- **Issue #8 — Compatibility with libWrapper modules** (Mobile Improvements, TouchVTT, GM Screen, etc.): All prototype wraps (`_getHeaderButtons`, `setPosition`, `minimize`, `maximize`, `close` on both AppV1 and AppV2) now detect the real libWrapper at runtime and route through it when present. This eliminates infinite recursion caused by Mobile Improvements' libWrapper LISTENERs on `ApplicationV2.prototype.close/minimize/maximize` conflicting with WCN's direct prototype assignment. When libWrapper is absent, all wraps fall back to WCN's built-in `_wrapMethod` exactly as before — no hard dependency added.
+- A console info message is logged on startup when libWrapper is detected, confirming which dispatch path is active.
+
+#### Included from beta 13.1.2.1
+##### Fixed
+- **Issue #7 — Null-guard on string helpers**: `curateId`, `curateTitle`, and `uncurateTitle` now guard against `null`/non-string input that caused errors on sheets with missing titles. (Credit: Andersants)
+
+#### Included from beta 13.1.2.0
+##### Added
+- **Canvas-only taskbar width** setting: the taskbar can now stop at the sidebar's left edge instead of spanning the full viewport, avoiding overlap with the chat/notifications column. A `ResizeObserver` keeps the boundary accurate when the sidebar resizes or collapses.
+- **Taskbar right-click context menu**: right-clicking a taskbar button opens a context menu with Restore, Maximize, Default Size, Pin/Unpin, and Close actions.
+- **Maximize** action: expands the window to fill the available viewport (accounting for taskbar height at top or bottom).
+- **Default Size** action: resets a window to its configured default dimensions (read from `DEFAULT_OPTIONS`, `defaultOptions`, or instantiation options).
+- AppV2 inline header now also includes **Maximize** and **Default Size** buttons alongside Minimize.
+- **Scroll-edge fade masks** on the taskbar: items cut off by horizontal overflow fade out at the left and/or right edge (toggled by JS scroll state).
+- New **Verbose Debug Logs** setting for per-method tracing (separate from the existing Debug Logging toggle).
+- One-time warning notification when a legacy **AppV1** sheet is detected, informing users that header controls may not appear until the system/module is updated to ApplicationV2.
+##### Changed
+- Taskbar buttons are now **24 px tall** (tighter, less intrusive).
+- Taskbar now shows a **1 px dark border** on its screen-facing edge (bottom border for top taskbar, top border for bottom taskbar).
+- AppV1 header controls (Minimize, Maximize, Default Size, Pin) are now injected via a **prototype-level wrap** of `Application.prototype._getHeaderButtons` instead of relying solely on the hook, making injection reliable for systems that rebuild headers after the hook fires (e.g. Twilight: 2000).
+- The **Close button** is always positioned as the rightmost header control on AppV1 sheets, with WCN buttons immediately to its left.
+
+## [13.1.2.5] *(Pre-release beta — changes included in 14.0.0.0)*
 ### Added
 - **Maximize Width / Height settings**: Two new client settings (10–100%, step 5) control the size the Maximize button resizes a window to. Defaults remain 60% wide × 80% tall of the `#board` area.
 - **Default Size Button / Maximize Button visibility settings**: Independent enabled/disabled toggles for the Default Size and Maximize header buttons, matching the existing Minimize Button setting. All three default to enabled. The new settings appear in the Taskbar section of module settings, grouped after Minimize Button.
@@ -20,7 +73,7 @@ Note: The 13.x versions are the reworked Foundry VTT v13+ fork/modernization of 
 - **Startup log of learned defaults**: On world load, WCN prints all captured learned defaults (or a "none yet" message) to the console for easy inspection.
 - **Default Size fallback notification**: If the Default Size button is clicked for a sheet type with no captured default, WCN shows a `ui.notifications.info` message advising the user to open a sheet of that type once so WCN can record it automatically.
 
-## [13.1.2.4]
+## [13.1.2.4] *(Pre-release beta — changes included in 14.0.0.0)*
 ### Changed
 - **Maximize behaviour**: The maximize button no longer snaps the window to a fixed corner. It now resizes the window in place to 60% × 80% of the `#board` area via `setPosition()`, so the window remains draggable and the size sticks on drag.
 - **Button order**: Default Size and Maximize buttons are now ordered Default Size → Maximize (left to right) for logical progression.
@@ -29,7 +82,7 @@ Note: The 13.x versions are the reworked Foundry VTT v13+ fork/modernization of 
 - **Sweep after `window-controls-next.ready`**: Fixed iteration over `foundry.applications.instances` (a `Map`) — `Object.values()` on a Map yields empty results; now uses `Array.from(instances.values())`.
 - **Pin toggle cross-contamination**: Clicking pin on an AppV2 window was accidentally toggling unrelated AppV1 windows. Root cause: the linked-window lookup used `appId` equality, but AppV2 apps have no `appId` (`undefined === undefined` matched any AppV1 window with no `targetApp`). The lookup is now guarded to only run when `appId` is a real value.
 
-## [13.1.2.3]
+## [13.1.2.3] *(Pre-release beta — changes included in 14.0.0.0)*
 ### Added
 - **Third-party app registration API**: Module developers can now opt standalone AppV2 windows into WCN management (taskbar, pin, minimize) by calling `WindowControls.registerApp(YourAppClass)` inside a `Hooks.once('window-controls-next.ready', ...)` callback. WCN fires the `window-controls-next.ready` hook after full initialisation. Example: `About Time Next` registers `ATEventManagerAppV2` this way so its Event Manager window gets full taskbar/pin support.
 - **Post-registration sweep**: After firing `window-controls-next.ready`, WCN sweeps all currently-open windows and applies controls/pin state to any that now pass `_isTargetSheet`. This ensures windows opened during a third-party module's `ready` callback that ran before WCN's are not missed.
@@ -37,16 +90,16 @@ Note: The 13.x versions are the reworked Foundry VTT v13+ fork/modernization of 
 - **Sub-sheet isolation**: `_isTargetSheet` now requires a document-backed app to be the document's canonical sheet (`document.sheet === app`). Sub-windows opened from a sheet (Sheet Config, Permission Control, Token Config, etc.) no longer inherit WCN controls or pinned state from their parent.
 - `Dialog` (AppV1) and `DialogV2` (AppV2) instances are now explicitly excluded from WCN management regardless of other conditions.
 
-## [13.1.2.2]
+## [13.1.2.2] *(Pre-release beta — changes included in 14.0.0.0)*
 ### Fixed
 - **Issue #8 — Compatibility with libWrapper modules** (Mobile Improvements, TouchVTT, GM Screen, etc.): All prototype wraps (`_getHeaderButtons`, `setPosition`, `minimize`, `maximize`, `close` on both AppV1 and AppV2) now detect the real libWrapper at runtime and route through it when present. This eliminates infinite recursion caused by Mobile Improvements' libWrapper LISTENERs on `ApplicationV2.prototype.close/minimize/maximize` conflicting with WCN's direct prototype assignment. When libWrapper is absent, all wraps fall back to WCN's built-in `_wrapMethod` exactly as before — no hard dependency added.
 - A console info message is logged on startup when libWrapper is detected, confirming which dispatch path is active.
 
-## [13.1.2.1]
+## [13.1.2.1] *(Pre-release beta — changes included in 14.0.0.0)*
 ### Fixed
 - **Issue #7 — Null-guard on string helpers**: `curateId`, `curateTitle`, and `uncurateTitle` now guard against `null`/non-string input that caused errors on sheets with missing titles. (Credit: Andersants)
 
-## [13.1.2.0]
+## [13.1.2.0] *(Pre-release beta — changes included in 14.0.0.0)*
 ### Added
 - **Canvas-only taskbar width** setting: the taskbar can now stop at the sidebar's left edge instead of spanning the full viewport, avoiding overlap with the chat/notifications column. A `ResizeObserver` keeps the boundary accurate when the sidebar resizes or collapses.
 - **Taskbar right-click context menu**: right-clicking a taskbar button opens a context menu with Restore, Maximize, Default Size, Pin/Unpin, and Close actions.
