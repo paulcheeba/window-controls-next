@@ -1,5 +1,13 @@
 class WindowControls {
 
+  // Known default sizes for Foundry core sheets that don't declare DEFAULT_OPTIONS.position
+  // or defaultOptions width/height. Keyed by constructor name. System sheet subclasses
+  // (e.g. JournalEntrySheet5e) are included since they inherit the same default dimensions.
+  static _KNOWN_DEFAULT_SIZES = {
+    'JournalEntrySheet':    { width: 960, height: 800 },
+    'JournalEntrySheet5e':  { width: 960, height: 800 },
+  };
+
   static MODULE_ID = 'window-controls-next';
 
   static externalMinimize = false;
@@ -13,6 +21,10 @@ class WindowControls {
   static cssMinimizedSize = 150;
   static cssMinimizedBottomBaseline = 70;
   static cssMinimizedTopBaseline = 0;
+  // Maximum z-index WCN will assign to floating windows.
+  // Keeps windows below --z-index-tooltip (9999) and --z-index-notification (99999).
+  // --z-index-window baseline is 100; 199 gives 100 window slots before the ceiling.
+  static WCN_Z_MAX = 199;
   static cssTopBarLeftStart = 120;
   static cssTopBarPersistentLeftStart = -5;
   static cssBottomBarLeftStart = 250;
@@ -29,11 +41,28 @@ class WindowControls {
 
   static _patches = new Map();
 
+  // Registry of third-party AppV2 classes that have opted in to WCN management.
+  // Module devs call WindowControls.registerApp(MyAppClass) from within a
+  // 'window-controls-next.ready' hook to include their standalone AppV2 windows.
+  static _registeredAppClasses = new Set();
+
+  /**
+   * Register a third-party AppV2 class for WCN management (taskbar, pin, minimize).
+   * Call this from within a Hooks.once('window-controls-next.ready', ...) callback.
+   * @param {Function|string} appClassOrName  The class constructor or its string name.
+   */
+  static registerApp(appClassOrName) {
+    if (!appClassOrName) return;
+    WindowControls._registeredAppClasses.add(appClassOrName);
+  }
+
   static _barrierWatcherInstalled = false;
   static _barrierEnforcerInstalled = false;
 
   static _loggedStartup = false;
   static _lastLoggedTaskbarState = null;
+  static _shownAppV1Warning = false;
+  static _sidebarResizeObserver = null;
 
   static _logAlways(...args) {
     try {
@@ -510,9 +539,31 @@ class WindowControls {
   }
 
   static _isTargetSheet(app) {
-    // Only affect Document-backed sheets.
-    // Sidebar directories/tabs and other UI apps do not have a Document UUID.
-    return !!WindowControls._getAppDocumentUuid(app);
+    if (!app) return false;
+
+    // Always exclude Dialog (AppV1) and DialogV2 (AppV2) — transient, never taskbar-managed.
+    if (app instanceof Dialog) return false;
+    const DialogV2 = foundry?.applications?.api?.DialogV2;
+    if (DialogV2 && app instanceof DialogV2) return false;
+
+    // Check the third-party opt-in registry first (standalone AppV2 windows registered
+    // by module devs via WindowControls.registerApp()).
+    if (WindowControls._registeredAppClasses.size > 0) {
+      for (const entry of WindowControls._registeredAppClasses) {
+        if (typeof entry === 'function' && app instanceof entry) return true;
+        if (typeof entry === 'string' && app.constructor?.name === entry) return true;
+      }
+    }
+
+    // Document-backed apps: only manage the canonical sheet (document.sheet === app).
+    // Sub-sheets (SheetConfig, PermissionControl, etc.) reference the same document
+    // but are not the primary sheet — exclude them to avoid inheriting pinned state.
+    const uuid = WindowControls._getAppDocumentUuid(app);
+    if (!uuid) return false;
+    const docSheet = app?.document?.sheet ?? app?.object?.sheet;
+    if (docSheet && docSheet !== app) return false;
+
+    return true;
   }
 
   /**
@@ -641,6 +692,7 @@ class WindowControls {
     });
 
     for (const btn of buttons) container.appendChild(btn);
+    WindowControls._updateTaskbarFadeClasses();
   }
 
   static _ensureHoverPreviewHandlers(entry, app) {
@@ -764,9 +816,35 @@ class WindowControls {
 
   static _bringToFront(app) {
     if (!app) return;
-    // AppV2: bringToFront is the supported method. AppV1 historically used bringToTop.
-    if (typeof app.bringToFront === 'function') return app.bringToFront();
-    if (typeof app.bringToTop === 'function') return app.bringToTop();
+
+    // Get the element before calling Foundry's bringToFront so we can identify
+    // it in the peer list after the call.
+    const el = app.element?.[0] instanceof HTMLElement ? app.element[0]
+      : app.element instanceof HTMLElement ? app.element : null;
+
+    // Always call Foundry's implementation first to keep its internal counter in sync.
+    if (typeof app.bringToFront === 'function') app.bringToFront();
+    else if (typeof app.bringToTop === 'function') app.bringToTop();
+
+    if (!el) return;
+
+    // After Foundry assigns a z-index, clamp to peerMax + 1 so windows never
+    // climb into tooltip / UI-chrome z territory.
+    const base = parseInt(
+      getComputedStyle(document.documentElement).getPropertyValue('--z-index-window')
+    ) || 100;
+
+    const peerEls = [
+      ...Object.values(ui.windows ?? {}).map(a => a.element?.[0] ?? a.element),
+      ...Array.from(foundry?.applications?.instances?.values?.() ?? []).map(a => a.element)
+    ].filter(e => e instanceof HTMLElement && e !== el);
+
+    const peerMax = peerEls.reduce((max, e) => {
+      const z = parseInt(getComputedStyle(e).zIndex);
+      return isNaN(z) ? max : Math.max(max, z);
+    }, base);
+
+    el.style.zIndex = String(Math.min(peerMax + 1, WindowControls.WCN_Z_MAX));
   }
 
   static _getTaskbarSetting() {
@@ -838,8 +916,22 @@ class WindowControls {
 
         container.scrollLeft = next;
         ev.preventDefault();
+        WindowControls._updateTaskbarFadeClasses();
       }, { passive: false });
+
+      // Also update fades when the container is scrolled natively.
+      container.addEventListener('scroll', () => {
+        WindowControls._updateTaskbarFadeClasses();
+      }, { passive: true });
     }
+  }
+
+  static _updateTaskbarFadeClasses() {
+    const container = WindowControls._getTaskbarButtonsContainer();
+    if (!(container instanceof HTMLElement)) return;
+    const { scrollLeft, scrollWidth, clientWidth } = container;
+    container.classList.toggle('wc-fade-left',  scrollLeft > 1);
+    container.classList.toggle('wc-fade-right', scrollLeft < scrollWidth - clientWidth - 1);
   }
 
   static _applyTaskbarDockLayout() {
@@ -1062,9 +1154,99 @@ class WindowControls {
     btn.classList.toggle('pinned', !!existingEntry.pinned);
 
     WindowControls._ensureHoverPreviewHandlers(existingEntry, app);
+    WindowControls._ensureTaskbarButtonContextMenu(existingEntry, app);
 
     WindowControls._taskbarEntries.set(strKey, existingEntry);
     WindowControls._sortTaskbarButtons();
+  }
+
+  static _ensureTaskbarButtonContextMenu(entry, app) {
+    if (!entry || !(entry.button instanceof HTMLElement) || !app) return;
+    if (entry._wcContextMenuInstalled === true) return;
+    entry._wcContextMenuInstalled = true;
+
+    entry.button.addEventListener('contextmenu', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+
+      // Close any existing WCN context menu.
+      document.getElementById('wc-context-menu')?.remove();
+
+      const isPinned = app._pinned === true;
+      const pinnedEnabled = game?.settings?.get(WindowControls.MODULE_ID, 'pinnedButton') === 'enabled';
+
+      const items = [
+        {
+          label: game.i18n.localize('WindowControls.ContextRestore'),
+          icon: 'fa-solid fa-window-restore',
+          action: () => { void WindowControls._restoreFromTaskbar(app); }
+        },
+        {
+          label: game.i18n.localize('WindowControls.DefaultSize'),
+          icon: 'fa-solid fa-compress',
+          action: () => { void WindowControls._restoreDefaultSize(app); }
+        },
+        {
+          label: game.i18n.localize('WindowControls.ContextMaximize'),
+          icon: 'fa-solid fa-expand',
+          action: () => { void WindowControls._maximizeToViewport(app); }
+        },
+      ];
+
+      if (pinnedEnabled) {
+        items.push({
+          label: isPinned
+            ? game.i18n.localize('WindowControls.ContextUnpin')
+            : game.i18n.localize('WindowControls.ContextPin'),
+          icon: 'fa-solid fa-map-pin',
+          action: () => { WindowControls.applyPinnedMode(app); }
+        });
+      }
+
+      items.push({
+        label: game.i18n.localize('WindowControls.ContextClose'),
+        icon: 'fa-solid fa-times',
+        action: () => {
+          WindowControls.organizedClose(app, WindowControls._getTaskbarSetting());
+          if (typeof app.close === 'function') void app.close();
+        }
+      });
+
+      const menu = document.createElement('nav');
+      menu.id = 'wc-context-menu';
+      menu.className = 'context-menu';
+      menu.innerHTML = items.map(item =>
+        `<li class="context-item"><a><i class="${foundry.utils.escapeHTML(item.icon)}"></i>${foundry.utils.escapeHTML(item.label)}</a></li>`
+      ).join('');
+
+      document.body.appendChild(menu);
+
+      // Position above the button (taskbar is at bottom or top).
+      const btnRect = entry.button.getBoundingClientRect();
+      const menuH = menu.offsetHeight || 100;
+      const above = btnRect.top > window.innerHeight / 2;
+      menu.style.position = 'fixed';
+      menu.style.left = Math.min(ev.clientX, window.innerWidth - menu.offsetWidth - 4) + 'px';
+      menu.style.top = above
+        ? (btnRect.top - menuH - 4) + 'px'
+        : (btnRect.bottom + 4) + 'px';
+      menu.style.zIndex = String(WindowControls.WCN_Z_MAX + 1);
+
+      // Wire up click handlers.
+      menu.querySelectorAll('li.context-item').forEach((li, i) => {
+        li.addEventListener('click', (e) => {
+          e.stopPropagation();
+          menu.remove();
+          items[i].action();
+        });
+      });
+
+      // Close on any outside click.
+      const close = (e) => {
+        if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('click', close, true); }
+      };
+      setTimeout(() => document.addEventListener('click', close, true), 0);
+    });
   }
 
   static _removeTaskbarButton(app) {
@@ -1075,6 +1257,126 @@ class WindowControls {
     if (entry.button?.parentElement) entry.button.parentElement.removeChild(entry.button);
     WindowControls._taskbarEntries.delete(String(key));
     WindowControls._sortTaskbarButtons();
+  }
+
+  static async _maximizeToViewport(app) {
+    if (WindowControls._isHiddenToTaskbar(app)) {
+      await WindowControls._restoreFromTaskbar(app);
+    }
+    await new Promise(r => requestAnimationFrame(r));
+    const el = WindowControls._getElement(app);
+    if (!el) return;
+    const board  = document.getElementById('board');
+    const boardW = board ? board.offsetWidth  : window.innerWidth;
+    const boardH = board ? board.offsetHeight : window.innerHeight;
+    const widthPct  = Math.min(100, Math.max(10, game.settings.get(WindowControls.MODULE_ID, 'maximizeWidth')))  / 100;
+    const heightPct = Math.min(100, Math.max(10, game.settings.get(WindowControls.MODULE_ID, 'maximizeHeight'))) / 100;
+    const maxW = Math.round(boardW * widthPct);
+    const maxH = Math.round(boardH * heightPct);
+    if (typeof app.setPosition === 'function') {
+      app.setPosition({ width: maxW, height: maxH });
+    } else {
+      el.style.width  = `${maxW}px`;
+      el.style.height = `${maxH}px`;
+    }
+  }
+
+  static _getDefaultSize(app) {
+    // AppV2: DEFAULT_OPTIONS.position may carry width / height.
+    const defV2 = app?.constructor?.DEFAULT_OPTIONS?.position;
+    if (defV2?.width || defV2?.height) return { width: defV2.width ?? undefined, height: defV2.height ?? undefined };
+    // AppV1: static defaultOptions.
+    const defV1 = app?.constructor?.defaultOptions;
+    if (defV1?.width || defV1?.height) return { width: defV1.width ?? undefined, height: defV1.height ?? undefined };
+    // Last resort: options recorded at instantiation time.
+    const w = app?.options?.width;
+    const h = app?.options?.height;
+    if ((w && w !== 'auto') || (h && h !== 'auto')) {
+      return { width: (w && w !== 'auto') ? w : undefined, height: (h && h !== 'auto') ? h : undefined };
+    }
+    // Known Foundry core sheet defaults (sheets that declare no size in their options).
+    const knownName = app?.constructor?.name;
+    // Per-world learned defaults take priority — they reflect the actual system default for
+    // this world (captured automatically on the first ever render of each sheet class).
+    if (knownName) {
+      const learnedAll = (() => { try { return game?.settings?.get(WindowControls.MODULE_ID, 'learnedSheetDefaults'); } catch { return null; } })();
+      if (learnedAll?.[knownName]) return { ...learnedAll[knownName] };
+    }
+    if (knownName && WindowControls._KNOWN_DEFAULT_SIZES[knownName]) {
+      return { ...WindowControls._KNOWN_DEFAULT_SIZES[knownName] };
+    }
+    // Final fallback: CSS min-width/min-height (e.g. journals in v14 declare no position
+    // defaults but do set min-width/height via stylesheet — use those as the natural default).
+    const el = app?.element instanceof HTMLElement ? app.element
+      : app?.element?.[0] instanceof HTMLElement ? app.element[0] : null;
+    if (el) {
+      const cs = getComputedStyle(el);
+      const minW = parseFloat(cs.minWidth);
+      const minH = parseFloat(cs.minHeight);
+      if (minW > 0 || minH > 0) {
+        return { width: minW > 0 ? minW : undefined, height: minH > 0 ? minH : undefined };
+      }
+    }
+    return { width: undefined, height: undefined };
+  }
+
+  static async _restoreDefaultSize(app) {
+    if (WindowControls._isHiddenToTaskbar(app)) {
+      await WindowControls._restoreFromTaskbar(app);
+      await new Promise(r => requestAnimationFrame(r));
+    }
+    const size = WindowControls._getDefaultSize(app);
+    if (!size.width && !size.height) {
+      const name = app?.constructor?.name ?? 'this sheet type';
+      ui?.notifications?.info?.(
+        `Window Controls: No default size has been captured for "${name}" yet. ` +
+        `Open any sheet of this type once and WCN will record its dimensions automatically.`
+      );
+      return;
+    }
+    if (typeof app.setPosition === 'function') {
+      app.setPosition(size);
+    } else {
+      const el = WindowControls._getElement(app);
+      if (el) {
+        if (size.width)  el.style.width  = `${size.width}px`;
+        if (size.height) el.style.height = `${size.height}px`;
+      }
+    }
+  }
+
+  /**
+   * On the first render of a sheet class never seen before in this world, capture its
+   * actual rendered dimensions as the learned default size for that class.  Only GMs
+   * may write world settings.  Runs asynchronously after the next animation frame so
+   * the browser has finished laying out the window.
+   */
+  static _maybeCaptureFirstRenderSize(app) {
+    if (!WindowControls._isTargetSheet(app)) return;
+    if (!game.user?.isGM) return;
+    const name = app?.constructor?.name;
+    if (!name) return;
+    let learned;
+    try {
+      learned = game.settings.get(WindowControls.MODULE_ID, 'learnedSheetDefaults') ?? {};
+    } catch { return; }
+    if (learned[name]) return;
+    requestAnimationFrame(() => {
+      const el = WindowControls._getElement(app);
+      if (!(el instanceof HTMLElement)) return;
+      const w = el.offsetWidth;
+      const h = el.offsetHeight;
+      if (!w || !h) return;
+      // Re-read in case another render already stored this class.
+      let current;
+      try {
+        current = game.settings.get(WindowControls.MODULE_ID, 'learnedSheetDefaults') ?? {};
+      } catch { return; }
+      if (current[name]) return;
+      const updated = { ...current, [name]: { width: w, height: h } };
+      game.settings.set(WindowControls.MODULE_ID, 'learnedSheetDefaults', updated)?.catch?.(() => {});
+      WindowControls._debug(`Learned default size for "${name}": ${w}×${h}`);
+    });
   }
 
   static _restoreFromTaskbar(app) {
@@ -1155,9 +1457,11 @@ class WindowControls {
     // Avoid duplicates on re-render.
     if (header.querySelector('.window-controls-inline')) return;
 
-    const minimizeSetting = game.settings.get(WindowControls.MODULE_ID, 'minimizeButton');
-    const pinnedSetting = game.settings.get(WindowControls.MODULE_ID, 'pinnedButton');
-    if (minimizeSetting !== 'enabled' && pinnedSetting !== 'enabled') return;
+    const minimizeSetting   = game.settings.get(WindowControls.MODULE_ID, 'minimizeButton');
+    const pinnedSetting     = game.settings.get(WindowControls.MODULE_ID, 'pinnedButton');
+    const defaultSizeSetting = game.settings.get(WindowControls.MODULE_ID, 'defaultSizeButton');
+    const maximizeSetting   = game.settings.get(WindowControls.MODULE_ID, 'maximizeButton');
+    if (minimizeSetting !== 'enabled' && pinnedSetting !== 'enabled' && defaultSizeSetting !== 'enabled' && maximizeSetting !== 'enabled') return;
 
     const closeControl = WindowControls._getCloseControlElement(app, el);
     const controls = document.createElement('div');
@@ -1194,6 +1498,24 @@ class WindowControls {
       }));
     }
 
+    if (defaultSizeSetting === 'enabled') {
+      controls.appendChild(makeControl({
+        cls: 'wc-default-size',
+        icon: 'fa-solid fa-compress',
+        titleKey: 'WindowControls.DefaultSize',
+        onClick: async () => { await WindowControls._restoreDefaultSize(app); }
+      }));
+    }
+
+    if (maximizeSetting === 'enabled') {
+      controls.appendChild(makeControl({
+        cls: 'wc-maximize',
+        icon: 'fa-solid fa-expand',
+        titleKey: 'WindowControls.Maximize',
+        onClick: async () => { await WindowControls._maximizeToViewport(app); }
+      }));
+    }
+
     if (pinnedSetting === 'enabled') {
       controls.appendChild(makeControl({
         cls: 'pin',
@@ -1201,7 +1523,10 @@ class WindowControls {
         titleKey: 'WindowControls.Pin',
         onClick: async () => {
           WindowControls.applyPinnedMode(app);
-          WindowControls.applyPinnedMode(Object.values(ui.windows).find(w => w.targetApp?.appId === app.appId));
+          if (app.appId != null) {
+            const linked = Object.values(ui.windows).find(w => w.targetApp?.appId === app.appId);
+            if (linked) WindowControls.applyPinnedMode(linked);
+          }
         }
       }));
     }
@@ -1239,15 +1564,20 @@ class WindowControls {
     }
   }
 
+  // Null-guard fixes contributed by Andersants (issue #7):
+  // Token Mold and some other modules can pass null/non-string values here,
+  // causing a console error on right-click. Coerce defensively before calling .replace().
   static curateId(text) {
-    return text.replace(/\W/g, '_');
+    return (text || "").replace(/\W/g, '_');
   }
 
   static curateTitle(title) {
+    if (!title || typeof title !== 'string') return "";
     return title.replace("[Token] ", "~ ").replace("Table Configuration: ", "");
   }
 
   static uncurateTitle(title) {
+    if (!title || typeof title !== 'string') return "";
     return title.replace("~ ", "[Token] ");
   }
 
@@ -1331,7 +1661,32 @@ class WindowControls {
         const doc = await fromUuid(id);
         const sheet = doc?.sheet;
         if (!sheet || typeof sheet.render !== 'function') continue;
-        sheet.render(true);
+
+        const taskbarSetting = WindowControls._getTaskbarSetting();
+        const isTaskbarMode = WindowControls._isTaskbarMode(taskbarSetting);
+        const isAppV2 = !!(foundry?.applications?.api?.ApplicationV2 &&
+          sheet instanceof foundry.applications.api.ApplicationV2);
+
+        if (isAppV2 && isTaskbarMode && typeof sheet.maximize === 'function') {
+          // AppV2's render(force=true) fires maximize().then(bringToFront()) as a floating
+          // promise AFTER render() resolves (and after our finally). Override both to no-ops
+          // for the duration so the hidden window never claims a high z-index slot.
+          const _origMaximize    = sheet.maximize;
+          const _origBringToFront = sheet.bringToFront;
+          sheet.maximize     = async function() { return this; };
+          sheet.bringToFront = function()       { return this; };
+          try {
+            await sheet.render(true);
+          } finally {
+            sheet.maximize     = _origMaximize;
+            sheet.bringToFront = _origBringToFront;
+          }
+          WindowControls.organizedMinimize(sheet, taskbarSetting);
+        } else {
+          // AppV1 or non-taskbar mode: flag-based approach handled in the render hook.
+          sheet._wcRestoringFromPersist = true;
+          sheet.render(true);
+        }
         WindowControls._persistRenderMinimizeRetry(sheet, { position });
       } catch (e) {
         console.warn(`Window Controls: Failed restoring pinned window for id ${id}`, e);
@@ -1609,17 +1964,25 @@ class WindowControls {
 
   static _injectHeaderControlsV1(app, buttons) {
     if (WindowControls._shouldIgnoreApp(app)) return;
+
+    // Idempotency: skip if WCN buttons are already present (prototype wrap + hook both call this).
+    const alreadyInjected = buttons.some(b => b._wcn === true);
+    if (alreadyInjected) return;
+
     const close = buttons.find(b => b.class === 'close');
     if (close) close.label = '';
 
     const newButtons = [];
 
-    const minimizeSetting = game.settings.get(WindowControls.MODULE_ID, 'minimizeButton');
+    const minimizeSetting    = game.settings.get(WindowControls.MODULE_ID, 'minimizeButton');
+    const defaultSizeSetting  = game.settings.get(WindowControls.MODULE_ID, 'defaultSizeButton');
+    const maximizeSetting    = game.settings.get(WindowControls.MODULE_ID, 'maximizeButton');
     if (minimizeSetting === 'enabled') {
       newButtons.push({
         label: "",
         class: "minimize",
         icon: "far fa-window-minimize",
+        _wcn: true,
         onclick: function () {
           if (WindowControls._isMinimized(this)) this.maximize(true);
           else {
@@ -1631,6 +1994,24 @@ class WindowControls {
         }.bind(app)
       });
     }
+    if (defaultSizeSetting === 'enabled') {
+      newButtons.push({
+        label: "",
+        class: "wc-default-size",
+        icon: "fa-solid fa-compress",
+        _wcn: true,
+        onclick: () => { void WindowControls._restoreDefaultSize(app); }
+      });
+    }
+    if (maximizeSetting === 'enabled') {
+      newButtons.push({
+        label: "",
+        class: "wc-maximize",
+        icon: "fa-solid fa-expand",
+        _wcn: true,
+        onclick: () => { void WindowControls._maximizeToViewport(app); }
+      });
+    }
 
     const pinnedSetting = game.settings.get(WindowControls.MODULE_ID, 'pinnedButton');
     if (pinnedSetting === 'enabled') {
@@ -1638,14 +2019,25 @@ class WindowControls {
         label: "",
         class: "pin",
         icon: "fas fa-map-pin",
+        _wcn: true,
         onclick: () => {
           WindowControls.applyPinnedMode(app);
-          WindowControls.applyPinnedMode(Object.values(ui.windows).find(w => w.targetApp?.appId === app.appId));
+          if (app.appId != null) {
+            const linked = Object.values(ui.windows).find(w => w.targetApp?.appId === app.appId);
+            if (linked) WindowControls.applyPinnedMode(linked);
+          }
         }
       });
     }
 
-    buttons.unshift(...newButtons);
+    // Move close to the end so it is always the rightmost button (×), with
+    // WCN buttons immediately left of it and all system buttons before them.
+    const closeIndex = buttons.indexOf(close);
+    if (closeIndex !== -1) buttons.splice(closeIndex, 1);
+
+    buttons.push(...newButtons);
+
+    if (close) buttons.push(close);
   }
 
   static _injectHeaderControlsV2(app, controls) {
@@ -1705,6 +2097,32 @@ class WindowControls {
     game.settings.register(WindowControls.MODULE_ID, 'minimizeButton', {
       name: game.i18n.localize("WindowControls.MinimizeButtonName"),
       hint: game.i18n.localize("WindowControls.MinimizeButtonHint"),
+      scope: 'world',
+      config: true,
+      type: String,
+      choices: {
+        "enabled": game.i18n.localize("WindowControls.Enabled"),
+        "disabled": game.i18n.localize("WindowControls.Disabled")
+      },
+      default: "enabled",
+      onChange: WindowControls.debouncedReload
+    });
+    game.settings.register(WindowControls.MODULE_ID, 'defaultSizeButton', {
+      name: game.i18n.localize("WindowControls.DefaultSizeButtonName"),
+      hint: game.i18n.localize("WindowControls.DefaultSizeButtonHint"),
+      scope: 'world',
+      config: true,
+      type: String,
+      choices: {
+        "enabled": game.i18n.localize("WindowControls.Enabled"),
+        "disabled": game.i18n.localize("WindowControls.Disabled")
+      },
+      default: "enabled",
+      onChange: WindowControls.debouncedReload
+    });
+    game.settings.register(WindowControls.MODULE_ID, 'maximizeButton', {
+      name: game.i18n.localize("WindowControls.MaximizeButtonName"),
+      hint: game.i18n.localize("WindowControls.MaximizeButtonHint"),
       scope: 'world',
       config: true,
       type: String,
@@ -1793,6 +2211,43 @@ class WindowControls {
       }
     });
 
+    game.settings.register(WindowControls.MODULE_ID, 'taskbarWidth', {
+      name: game.i18n.localize("WindowControls.TaskbarWidthName"),
+      hint: game.i18n.localize("WindowControls.TaskbarWidthHint"),
+      scope: 'world',
+      config: true,
+      type: String,
+      choices: {
+        "fullWidth": game.i18n.localize("WindowControls.TaskbarWidthFull"),
+        "canvasOnly": game.i18n.localize("WindowControls.TaskbarWidthCanvas"),
+      },
+      default: "fullWidth",
+      requiresReload: true,
+      onChange: () => {
+        WindowControls._applyTaskbarWidthFromSetting();
+      }
+    });
+
+    game.settings.register(WindowControls.MODULE_ID, 'maximizeWidth', {
+      name: game.i18n.localize('WindowControls.MaximizeWidthName'),
+      hint: game.i18n.localize('WindowControls.MaximizeWidthHint'),
+      scope: 'client',
+      config: true,
+      type: Number,
+      range: { min: 10, max: 100, step: 5 },
+      default: 60
+    });
+
+    game.settings.register(WindowControls.MODULE_ID, 'maximizeHeight', {
+      name: game.i18n.localize('WindowControls.MaximizeHeightName'),
+      hint: game.i18n.localize('WindowControls.MaximizeHeightHint'),
+      scope: 'client',
+      config: true,
+      type: Number,
+      range: { min: 10, max: 100, step: 5 },
+      default: 80
+    });
+
     game.settings.register(WindowControls.MODULE_ID, 'debugLogging', {
       name: game.i18n.localize('WindowControls.DebugLoggingName'),
       hint: game.i18n.localize('WindowControls.DebugLoggingHint'),
@@ -1821,10 +2276,44 @@ class WindowControls {
       default: false
     });
 
+    // Per-world learned sheet default sizes: keyed by constructor name, captured on first render.
+    // Hidden from the standard settings UI; populated automatically by _maybeCaptureFirstRenderSize.
+    game.settings.register(WindowControls.MODULE_ID, 'learnedSheetDefaults', {
+      scope: 'world',
+      config: false,
+      type: Object,
+      default: {}
+    });
+
   }
 
   static initHooks() {
 
+    // Patch Application.prototype._getHeaderButtons at the prototype level so WCN
+    // buttons survive sheet systems (e.g. Twilight 2000) that rebuild their header
+    // DOM after the getApplicationV1HeaderButtons hook fires.  Using a direct
+    // prototype wrap (equivalent to libWrapper WRAPPER mode) ensures the injection
+    // runs on every render regardless of third-party render order.
+    const _ghbWrapper = function (wrapped, ...args) {
+      const buttons = wrapped(...args);
+      WindowControls._injectHeaderControlsV1(this, buttons);
+      return buttons;
+    };
+    if (typeof globalThis.libWrapper !== 'undefined' && !globalThis.libWrapper.is_fallback) {
+      libWrapper.register(WindowControls.MODULE_ID, 'Application.prototype._getHeaderButtons', _ghbWrapper, 'WRAPPER');
+    } else {
+      WindowControls._wrapMethod({
+        target: Application.prototype,
+        method: '_getHeaderButtons',
+        name: 'Application.prototype',
+        wrapper: _ghbWrapper
+      });
+    }
+
+    // Keep the hook as a secondary safety net for any AppV1 that doesn't go
+    // through Application.prototype._getHeaderButtons (e.g. heavily overriding
+    // subclasses).  _injectHeaderControlsV1 is idempotent so double-injection
+    // is not a problem — it checks for existing buttons by class name.
     Hooks.on('getApplicationV1HeaderButtons', (app, buttons) => {
       WindowControls._injectHeaderControlsV1(app, buttons);
     });
@@ -1835,23 +2324,53 @@ class WindowControls {
 
     Hooks.on('renderApplicationV2', (app, element) => {
       WindowControls._ensureInlineControlsV2(app, element);
+      WindowControls._maybeCaptureFirstRenderSize(app);
 
       // Enforce single open instance per persisted Document UUID.
       void WindowControls._enforceSingleInstanceByPersistentId(app);
 
       // Safety: don't permanently hide windows across refresh unless we know why.
+      // NOTE: also skip un-hiding if this app is already tracked in the taskbar (e.g. journal
+      // page re-renders replace the element, losing the wcTaskbarHidden dataset marker).
       const key = WindowControls._getAppKey(app);
-      if (element?.style?.display === 'none' && element?.dataset?.wcTaskbarHidden !== '1' && (!key || !WindowControls._taskbarEntries.has(String(key)))) {
+      const isTaskbarTracked = key && WindowControls._taskbarEntries.has(String(key));
+      if (element?.style?.display === 'none' && element?.dataset?.wcTaskbarHidden !== '1' && !isTaskbarTracked) {
         element.style.display = '';
       }
 
+      // If this app is taskbar-tracked and hidden, re-apply the hidden marker to the new element
+      // (AppV2 re-renders replace the DOM element, losing the dataset marker).
+      if (isTaskbarTracked && app._minimized) {
+        WindowControls._hideToTaskbar(app);
+        // Re-apply after AppV2 finishes its own post-render steps (element replacement loses the marker).
+        setTimeout(() => { if (app._minimized) WindowControls._hideToTaskbar(app); }, 0);
+        return;
+      }
+
       // Auto-apply remembered pin (for windows opened later).
-      if (WindowControls._isRememberedPinned(app)) WindowControls.applyPinnedMode(app, { mode: 'pin' });
+      if (WindowControls._isRememberedPinned(app)) {
+        WindowControls.applyPinnedMode(app, { mode: 'pin' });
+      }
     });
 
     Hooks.on('renderApplicationV1', (app, html) => {
       const el = html?.[0];
       if (!(el instanceof HTMLElement)) return;
+      WindowControls._maybeCaptureFirstRenderSize(app);
+
+      // One-time notification: remind users that AppV1 sheets are deprecated in
+      // Foundry v13 and WCN header controls may not appear until the system/module
+      // providing this sheet is updated to ApplicationV2.
+      if (!WindowControls._shownAppV1Warning) {
+        WindowControls._shownAppV1Warning = true;
+        const name = app?.constructor?.name ?? 'Unknown';
+        ui?.notifications?.warn?.(
+          `Window Controls Next: The sheet "${name}" uses the legacy Application (v1) API which is deprecated in Foundry v13. ` +
+          `WCN header buttons may not appear on AppV1 sheets until the system or module that provides them is updated to ApplicationV2. ` +
+          `This warning can be safely ignored.`,
+          { permanent: false }
+        );
+      }
 
       // Enforce single open instance per persisted Document UUID.
       void WindowControls._enforceSingleInstanceByPersistentId(app);
@@ -1861,7 +2380,18 @@ class WindowControls {
         el.style.display = '';
       }
 
-      if (WindowControls._isRememberedPinned(app)) WindowControls.applyPinnedMode(app, { mode: 'pin' });
+      if (WindowControls._isRememberedPinned(app)) {
+        WindowControls.applyPinnedMode(app, { mode: 'pin' });
+      }
+
+      if (app._wcRestoringFromPersist) {
+        delete app._wcRestoringFromPersist;
+        const taskbarSetting = WindowControls._getTaskbarSetting();
+        if (WindowControls._isTaskbarMode(taskbarSetting)) {
+          WindowControls.organizedMinimize(app, taskbarSetting);
+          setTimeout(() => { if (app._minimized) WindowControls._hideToTaskbar(app); }, 0);
+        }
+      }
     });
 
     Hooks.on('renderSettingsConfig', (app, html) => {
@@ -1878,8 +2408,21 @@ class WindowControls {
       WindowControls._applyTaskbarColorFromSetting();
       WindowControls._applyTaskbarScrollbarColorFromSetting();
       WindowControls._applyPinnedHeaderColorFromSetting();
+      WindowControls._applyTaskbarWidthFromSetting();
 
-      const wrapAppV1 = (method, fn) => {
+      // Detect real libWrapper (not a shim/polyfill bundled by another module).
+      // When present, route all prototype wraps through it so libWrapper can manage
+      // dispatch order and prevent re-entrancy conflicts with modules like
+      // Mobile Improvements that also wrap these methods via libWrapper.
+      const hasLibWrapper = typeof globalThis.libWrapper !== 'undefined' && !globalThis.libWrapper.is_fallback;
+      if (hasLibWrapper) {
+        WindowControls._logAlways('libWrapper detected — prototype wraps will use libWrapper for conflict-free dispatch.');
+      }
+
+      const wrapAppV1 = (method, fn, type = 'MIXED') => {
+        if (hasLibWrapper) {
+          return libWrapper.register(WindowControls.MODULE_ID, `Application.prototype.${method}`, fn, type);
+        }
         return WindowControls._wrapMethod({
           target: Application.prototype,
           method,
@@ -1888,9 +2431,12 @@ class WindowControls {
         });
       };
 
-      const wrapAppV2 = (method, fn) => {
+      const wrapAppV2 = (method, fn, type = 'MIXED') => {
         const proto = foundry?.applications?.api?.ApplicationV2?.prototype;
         if (!proto) return;
+        if (hasLibWrapper) {
+          return libWrapper.register(WindowControls.MODULE_ID, `foundry.applications.api.ApplicationV2.prototype.${method}`, fn, type);
+        }
         return WindowControls._wrapMethod({
           target: proto,
           method,
@@ -1911,7 +2457,7 @@ class WindowControls {
         return WindowControls._isTargetSheet(app);
       };
 
-      const verboseWrap = (wrapFn, method) => {
+      const verboseWrap = (wrapFn, method, type = 'WRAPPER') => {
         wrapFn(method, function (wrapped, ...args) {
           if (shouldVerboseDebugApp(this)) {
             const first = args?.[0];
@@ -1919,12 +2465,12 @@ class WindowControls {
             WindowControls._debugVerbose(method, WindowControls._debugDescribeApp(this), pos ?? first ?? null);
           }
           return wrapped(...args);
-        });
+        }, type);
       };
 
-      // Positioning hooks (verbose only).
-      verboseWrap(wrapAppV1, 'setPosition');
-      verboseWrap(wrapAppV2, 'setPosition');
+      // Positioning hooks (verbose only). Always-call-wrapped = WRAPPER type.
+      verboseWrap(wrapAppV1, 'setPosition', 'WRAPPER');
+      verboseWrap(wrapAppV2, 'setPosition', 'WRAPPER');
 
       if (WindowControls._isDebugLoggingEnabled()) {
         WindowControls._debug('Debug logging active (barrier contact mode).', {
@@ -1952,20 +2498,20 @@ class WindowControls {
           if (WindowControls._shouldIgnoreApp(this)) return wrapped(...args);
           WindowControls.organizedMinimize(this, settingOrganized);
           return Promise.resolve();
-        });
+        }, 'MIXED');
 
         wrapAppV1('maximize', function (wrapped, ...args) {
           if (WindowControls._shouldIgnoreApp(this)) return wrapped(...args);
           WindowControls.organizedRestore(this, settingOrganized);
           return Promise.resolve();
-        });
+        }, 'MIXED');
 
         wrapAppV1('close', function (wrapped, ...args) {
           WindowControls.organizedClose(this, settingOrganized);
           return wrapped(...args).then(() => {
             WindowControls._removeTaskbarButton(this);
           });
-        });
+        }, 'WRAPPER');
       }
 
       // AppV2 windows require wrapping their lifecycle methods separately.
@@ -1974,19 +2520,19 @@ class WindowControls {
           if (WindowControls._shouldIgnoreApp(this)) return await wrapped(...args);
           WindowControls.organizedMinimize(this, settingOrganized);
           return;
-        });
+        }, 'MIXED');
 
         wrapAppV2('maximize', async function (wrapped, ...args) {
           if (WindowControls._shouldIgnoreApp(this)) return await wrapped(...args);
           WindowControls.organizedRestore(this, settingOrganized);
           return this;
-        });
+        }, 'MIXED');
 
         wrapAppV2('close', async function (wrapped, ...args) {
           WindowControls.organizedClose(this, settingOrganized);
           await wrapped(...args);
           WindowControls._removeTaskbarButton(this);
-        });
+        }, 'WRAPPER');
       }
 
       if (game.settings.get(WindowControls.MODULE_ID, 'rememberPinnedWindows')) {
@@ -2003,12 +2549,51 @@ class WindowControls {
         });
       }
 
+      // Log any per-world learned sheet default sizes that have been captured so far.
+      try {
+        const learned = game.settings.get(WindowControls.MODULE_ID, 'learnedSheetDefaults') ?? {};
+        const entries = Object.entries(learned);
+        if (entries.length) {
+          WindowControls._logAlways(
+            `Learned sheet defaults for this world (${entries.length}):`,
+            Object.fromEntries(entries.map(([k, v]) => [k, `${v.width}×${v.height}`]))
+          );
+        } else {
+          WindowControls._logAlways('No learned sheet defaults recorded for this world yet.');
+        }
+      } catch { /* ignore */ }
+
+      // Signal to third-party modules that WCN is fully initialised and
+      // WindowControls.registerApp() is ready to accept registrations.
+      Hooks.callAll('window-controls-next.ready');
+
+      // Sweep: catch any windows that rendered during a third-party module's ready
+      // callback that ran before ours — _registeredAppClasses was empty at render time.
+      const liveApps = [
+        ...Object.values(ui.windows ?? {}),
+        ...Array.from(foundry?.applications?.instances?.values?.() ?? []),
+      ];
+      for (const app of liveApps) {
+        if (!WindowControls._isTargetSheet(app)) continue;
+        WindowControls._ensureInlineControlsV2(app);
+        if (WindowControls._isRememberedPinned(app)) WindowControls.applyPinnedMode(app, { mode: 'pin' });
+      }
+
     });
 
     Hooks.on('closeSidebarTab', function (app) {
       WindowControls._removeTaskbarButton(app);
       WindowControls._showFromTaskbar(app);
     });
+
+    // Keep --wc-sidebar-width in sync when the sidebar collapses or expands.
+    Hooks.on('collapseSidebar', () => { WindowControls._updateSidebarWidthVariable(); });
+    Hooks.on('expandSidebar',   () => { WindowControls._updateSidebarWidthVariable(); });
+
+    // Update taskbar scroll fades when the window is resized (taskbar width changes).
+    window.addEventListener('resize', () => {
+      WindowControls._updateTaskbarFadeClasses();
+    }, { passive: true });
 
     Hooks.on('closeApplication', function (app) {
       WindowControls._removeTaskbarButton(app);
@@ -2130,6 +2715,182 @@ class WindowControls {
     }
   }
 
+  static _updateSidebarWidthVariable() {
+    // Measure from #sidebar's left edge so the taskbar extends behind #ui-right-column-1
+    // (the chat/notifications column). That column is nudged away from the bar via CSS.
+    const sidebar = document.getElementById('sidebar');
+    const width = sidebar
+      ? Math.max(0, Math.round(window.innerWidth - sidebar.getBoundingClientRect().left) + 6)
+      : 0;
+    document.documentElement.style.setProperty('--wc-sidebar-width', `${width}px`);
+  }
+
+  static _applySidebarWidthObserver() {
+    // Tear down any previous observer.
+    if (WindowControls._sidebarResizeObserver) {
+      WindowControls._sidebarResizeObserver.disconnect();
+      WindowControls._sidebarResizeObserver = null;
+    }
+
+    const targets = ['sidebar', 'ui-right']
+      .map(id => document.getElementById(id))
+      .filter(Boolean);
+    if (!targets.length) return;
+
+    WindowControls._updateSidebarWidthVariable();
+
+    WindowControls._sidebarResizeObserver = new ResizeObserver(() => {
+      WindowControls._updateSidebarWidthVariable();
+    });
+    for (const target of targets) {
+      WindowControls._sidebarResizeObserver.observe(target);
+    }
+  }
+
+  static _applyTaskbarWidthFromSetting() {
+    const canvasOnly = game?.settings?.get(WindowControls.MODULE_ID, 'taskbarWidth') === 'canvasOnly';
+    document.body.classList.toggle('wc-taskbar-canvas-only', canvasOnly);
+    if (canvasOnly) {
+      WindowControls._applySidebarWidthObserver();
+    } else {
+      if (WindowControls._sidebarResizeObserver) {
+        WindowControls._sidebarResizeObserver.disconnect();
+        WindowControls._sidebarResizeObserver = null;
+      }
+      document.documentElement.style.setProperty('--wc-sidebar-width', '0px');
+    }
+  }
+
+  /**
+   * Open the "Learned Sheet Defaults" management dialog (GM only).
+   * Shows a table of captured class-name → width×height pairs with per-row Edit
+   * and a Clear All footer action.
+   */
+  static async _showSheetDefaultsDialog() {
+    const DialogV2 = foundry?.applications?.api?.DialogV2;
+    if (!DialogV2) {
+      ui?.notifications?.warn?.('Window Controls: DialogV2 not available in this version of Foundry.');
+      return;
+    }
+
+    let learned;
+    try { learned = game.settings.get(WindowControls.MODULE_ID, 'learnedSheetDefaults') ?? {}; }
+    catch { learned = {}; }
+    const entries = Object.entries(learned).sort(([a], [b]) => a.localeCompare(b));
+
+    let bodyHtml;
+    if (!entries.length) {
+      bodyHtml = `<p class="notification info">No default sizes have been captured yet. Open any sheet once and WCN will record its dimensions automatically.</p>`;
+    } else {
+      const rows = entries.map(([name, size]) =>
+        `<tr>
+          <td class="wc-dsd-name">${name}</td>
+          <td class="wc-dsd-size">${size.width} &times; ${size.height}</td>
+          <td class="wc-dsd-actions">
+            <button type="button" class="wc-dsd-edit-btn" data-action="editEntry" data-sheet-name="${name}" title="Edit">
+              <i class="fas fa-pencil"></i>
+            </button>
+          </td>
+        </tr>`
+      ).join('');
+      bodyHtml = `
+        <table class="wc-defaults-table">
+          <thead><tr><th>Sheet Type</th><th>Size (w &times; h)</th><th></th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+        <div class="wc-dsd-clear-row">
+          <button type="button" class="wc-dsd-clear-btn" data-action="clearAll" title="Remove all captured sizes">
+            <i class="fas fa-trash"></i> Clear All
+          </button>
+        </div>`;
+    }
+
+    await DialogV2.wait({
+      window: { title: 'WCN: Learned Sheet Defaults', positioned: true },
+      position: { width: 540 },
+      content: `<div class="wc-sheet-defaults-dialog">${bodyHtml}</div>`,
+      rejectClose: false,
+      buttons: [{ action: 'close', label: 'Close', default: true, callback: () => {} }],
+      actions: {
+        editEntry: async function(event, target) {
+          const name = target.dataset.sheetName;
+          await this.close({ animate: false });
+          await WindowControls._showEditSheetDefaultDialog(name);
+          await WindowControls._showSheetDefaultsDialog();
+        },
+        clearAll: async function(event, target) {
+          const confirmed = await DialogV2.confirm({
+            window: { title: 'Clear All Learned Defaults?', positioned: true },
+            content: '<p>Remove all captured sheet default sizes? They will be re-learned the next time each sheet type is opened.</p>',
+            yes: { label: 'Clear All', icon: 'fas fa-trash', callback: () => true },
+            no:  { label: 'Cancel',    callback: () => false },
+            rejectClose: false,
+          });
+          if (confirmed) {
+            await game.settings.set(WindowControls.MODULE_ID, 'learnedSheetDefaults', {});
+            await this.close({ animate: false });
+            await WindowControls._showSheetDefaultsDialog();
+          }
+        }
+      }
+    });
+  }
+
+  /**
+   * Open an inline edit dialog for a single captured sheet default.
+   * @param {string} sheetName  Constructor name of the sheet class to edit.
+   */
+  static async _showEditSheetDefaultDialog(sheetName) {
+    const DialogV2 = foundry?.applications?.api?.DialogV2;
+    if (!DialogV2) return;
+
+    let learned;
+    try { learned = game.settings.get(WindowControls.MODULE_ID, 'learnedSheetDefaults') ?? {}; }
+    catch { learned = {}; }
+    const current = learned[sheetName] ?? { width: 800, height: 600 };
+
+    const result = await DialogV2.input({
+      window: { title: `Edit Default: ${sheetName}`, positioned: true },
+      position: { width: 360 },
+      content: `
+        <div class="wc-edit-default-dialog">
+          <p>Override the learned default size for <strong>${sheetName}</strong>.</p>
+          <div class="form-group">
+            <label>Width (px)</label>
+            <div class="form-fields">
+              <input type="number" name="width" min="100" max="3840" step="1" value="${current.width}">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Height (px)</label>
+            <div class="form-fields">
+              <input type="number" name="height" min="100" max="2160" step="1" value="${current.height}">
+            </div>
+          </div>
+        </div>`,
+      ok: {
+        label: 'Save',
+        icon: 'fas fa-save',
+        callback: (event, button) => ({
+          width:  button.form.elements.width.valueAsNumber,
+          height: button.form.elements.height.valueAsNumber
+        })
+      },
+      rejectClose: false
+    });
+
+    if (!result) return;
+    const { width: w, height: h } = result;
+    if (!w || !h || w < 100 || h < 100) {
+      ui?.notifications?.warn?.('Window Controls: Width and Height must be at least 100 px.');
+      return;
+    }
+    let cur;
+    try { cur = game.settings.get(WindowControls.MODULE_ID, 'learnedSheetDefaults') ?? {}; }
+    catch { cur = {}; }
+    await game.settings.set(WindowControls.MODULE_ID, 'learnedSheetDefaults', { ...cur, [sheetName]: { width: w, height: h } });
+  }
+
   static _organizeSettingsConfig(html) {
     if (!html) return;
 
@@ -2152,10 +2913,10 @@ class WindowControls {
     if (!moduleRoot?.length) moduleRoot = organizedMinimize.parent();
     if (!moduleRoot?.length) return;
 
-    // Remove previous injected headers if SettingsConfig re-renders.
-    moduleRoot.find('.wc-settings-header').remove();
+    // Remove previous injected headers and GM-only buttons if SettingsConfig re-renders.
+    moduleRoot.find('.wc-settings-header, .wc-settings-btn-group').remove();
 
-    const taskbarKeys = ['organizedMinimize', 'minimizeButton', 'clickOutsideMinimize', 'taskbarColor', 'taskbarScrollbarColor', 'debugLogging', 'debugVerbose'];
+    const taskbarKeys = ['organizedMinimize', 'taskbarWidth', 'minimizeButton', 'defaultSizeButton', 'maximizeButton', 'maximizeWidth', 'maximizeHeight', 'clickOutsideMinimize', 'taskbarColor', 'taskbarScrollbarColor', 'debugLogging', 'debugVerbose'];
     const pinningKeys = ['pinnedButton', 'pinnedHeaderColor', 'pinnedDoubleTapping', 'rememberPinnedWindows'];
 
     const taskbarHeader = $('<h3 class="wc-settings-header">Taskbar</h3>');
@@ -2165,7 +2926,26 @@ class WindowControls {
     moduleRoot.append(taskbarHeader);
     for (const key of taskbarKeys) {
       const g = getGroup(key);
-      if (g?.length) moduleRoot.append(g);
+      if (g?.length) {
+        moduleRoot.append(g);
+        // Inject the "Sheet Defaults" button row immediately after the Default Size toggle, GM only.
+        if (key === 'defaultSizeButton' && game.user?.isGM) {
+          const $btn = $(`
+            <div class="form-group wc-settings-btn-group">
+              <label>Learned Sheet Defaults</label>
+              <div class="form-fields">
+                <button type="button" class="wc-sheet-defaults-open-btn">
+                  <i class="fas fa-ruler-combined"></i> View / Edit Defaults
+                </button>
+              </div>
+              <p class="hint">View, edit, or clear the per-world default sizes captured the first time each sheet type is opened.</p>
+            </div>`);
+          $btn.find('.wc-sheet-defaults-open-btn').on('click', () => {
+            void WindowControls._showSheetDefaultsDialog();
+          });
+          moduleRoot.append($btn);
+        }
+      }
     }
 
     moduleRoot.append(pinningHeader);
@@ -2249,6 +3029,10 @@ Hooks.once('setup', () => {
 })
 
 Hooks.once('init', () => {
+  // Expose the class so other modules can call WindowControls.registerApp()
+  // from within their window-controls-next.ready listener.
+  game.modules.get(WindowControls.MODULE_ID).api = WindowControls;
+
   if (game.modules.get('minimize-button')?.active) {
     WindowControls.externalMinimize = true;
   }
