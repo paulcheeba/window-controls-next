@@ -1231,8 +1231,10 @@ class WindowControls {
     const board  = document.getElementById('board');
     const boardW = board ? board.offsetWidth  : window.innerWidth;
     const boardH = board ? board.offsetHeight : window.innerHeight;
-    const maxW = Math.round(boardW * 0.6);
-    const maxH = Math.round(boardH * 0.8);
+    const widthPct  = Math.min(100, Math.max(10, game.settings.get(WindowControls.MODULE_ID, 'maximizeWidth')))  / 100;
+    const heightPct = Math.min(100, Math.max(10, game.settings.get(WindowControls.MODULE_ID, 'maximizeHeight'))) / 100;
+    const maxW = Math.round(boardW * widthPct);
+    const maxH = Math.round(boardH * heightPct);
     if (typeof app.setPosition === 'function') {
       app.setPosition({ width: maxW, height: maxH });
     } else {
@@ -1349,9 +1351,11 @@ class WindowControls {
     // Avoid duplicates on re-render.
     if (header.querySelector('.window-controls-inline')) return;
 
-    const minimizeSetting = game.settings.get(WindowControls.MODULE_ID, 'minimizeButton');
-    const pinnedSetting = game.settings.get(WindowControls.MODULE_ID, 'pinnedButton');
-    if (minimizeSetting !== 'enabled' && pinnedSetting !== 'enabled') return;
+    const minimizeSetting   = game.settings.get(WindowControls.MODULE_ID, 'minimizeButton');
+    const pinnedSetting     = game.settings.get(WindowControls.MODULE_ID, 'pinnedButton');
+    const defaultSizeSetting = game.settings.get(WindowControls.MODULE_ID, 'defaultSizeButton');
+    const maximizeSetting   = game.settings.get(WindowControls.MODULE_ID, 'maximizeButton');
+    if (minimizeSetting !== 'enabled' && pinnedSetting !== 'enabled' && defaultSizeSetting !== 'enabled' && maximizeSetting !== 'enabled') return;
 
     const closeControl = WindowControls._getCloseControlElement(app, el);
     const controls = document.createElement('div');
@@ -1386,12 +1390,18 @@ class WindowControls {
           else await app.minimize();
         }
       }));
+    }
+
+    if (defaultSizeSetting === 'enabled') {
       controls.appendChild(makeControl({
         cls: 'wc-default-size',
         icon: 'fa-solid fa-compress',
         titleKey: 'WindowControls.DefaultSize',
         onClick: async () => { await WindowControls._restoreDefaultSize(app); }
       }));
+    }
+
+    if (maximizeSetting === 'enabled') {
       controls.appendChild(makeControl({
         cls: 'wc-maximize',
         icon: 'fa-solid fa-expand',
@@ -1855,7 +1865,9 @@ class WindowControls {
 
     const newButtons = [];
 
-    const minimizeSetting = game.settings.get(WindowControls.MODULE_ID, 'minimizeButton');
+    const minimizeSetting    = game.settings.get(WindowControls.MODULE_ID, 'minimizeButton');
+    const defaultSizeSetting  = game.settings.get(WindowControls.MODULE_ID, 'defaultSizeButton');
+    const maximizeSetting    = game.settings.get(WindowControls.MODULE_ID, 'maximizeButton');
     if (minimizeSetting === 'enabled') {
       newButtons.push({
         label: "",
@@ -1872,6 +1884,8 @@ class WindowControls {
           }
         }.bind(app)
       });
+    }
+    if (defaultSizeSetting === 'enabled') {
       newButtons.push({
         label: "",
         class: "wc-default-size",
@@ -1879,6 +1893,8 @@ class WindowControls {
         _wcn: true,
         onclick: () => { void WindowControls._restoreDefaultSize(app); }
       });
+    }
+    if (maximizeSetting === 'enabled') {
       newButtons.push({
         label: "",
         class: "wc-maximize",
@@ -1982,6 +1998,32 @@ class WindowControls {
       default: "enabled",
       onChange: WindowControls.debouncedReload
     });
+    game.settings.register(WindowControls.MODULE_ID, 'defaultSizeButton', {
+      name: game.i18n.localize("WindowControls.DefaultSizeButtonName"),
+      hint: game.i18n.localize("WindowControls.DefaultSizeButtonHint"),
+      scope: 'world',
+      config: true,
+      type: String,
+      choices: {
+        "enabled": game.i18n.localize("WindowControls.Enabled"),
+        "disabled": game.i18n.localize("WindowControls.Disabled")
+      },
+      default: "enabled",
+      onChange: WindowControls.debouncedReload
+    });
+    game.settings.register(WindowControls.MODULE_ID, 'maximizeButton', {
+      name: game.i18n.localize("WindowControls.MaximizeButtonName"),
+      hint: game.i18n.localize("WindowControls.MaximizeButtonHint"),
+      scope: 'world',
+      config: true,
+      type: String,
+      choices: {
+        "enabled": game.i18n.localize("WindowControls.Enabled"),
+        "disabled": game.i18n.localize("WindowControls.Disabled")
+      },
+      default: "enabled",
+      onChange: WindowControls.debouncedReload
+    });
     game.settings.register(WindowControls.MODULE_ID, 'pinnedButton', {
       name: game.i18n.localize("WindowControls.PinnedButtonName"),
       hint: game.i18n.localize("WindowControls.PinnedButtonHint"),
@@ -2075,6 +2117,26 @@ class WindowControls {
       onChange: () => {
         WindowControls._applyTaskbarWidthFromSetting();
       }
+    });
+
+    game.settings.register(WindowControls.MODULE_ID, 'maximizeWidth', {
+      name: game.i18n.localize('WindowControls.MaximizeWidthName'),
+      hint: game.i18n.localize('WindowControls.MaximizeWidthHint'),
+      scope: 'client',
+      config: true,
+      type: Number,
+      range: { min: 10, max: 100, step: 5 },
+      default: 60
+    });
+
+    game.settings.register(WindowControls.MODULE_ID, 'maximizeHeight', {
+      name: game.i18n.localize('WindowControls.MaximizeHeightName'),
+      hint: game.i18n.localize('WindowControls.MaximizeHeightHint'),
+      scope: 'client',
+      config: true,
+      type: Number,
+      range: { min: 10, max: 100, step: 5 },
+      default: 80
     });
 
     game.settings.register(WindowControls.MODULE_ID, 'debugLogging', {
@@ -2590,7 +2652,7 @@ class WindowControls {
     // Remove previous injected headers if SettingsConfig re-renders.
     moduleRoot.find('.wc-settings-header').remove();
 
-    const taskbarKeys = ['organizedMinimize', 'taskbarWidth', 'minimizeButton', 'clickOutsideMinimize', 'taskbarColor', 'taskbarScrollbarColor', 'debugLogging', 'debugVerbose'];
+    const taskbarKeys = ['organizedMinimize', 'taskbarWidth', 'minimizeButton', 'defaultSizeButton', 'maximizeButton', 'maximizeWidth', 'maximizeHeight', 'clickOutsideMinimize', 'taskbarColor', 'taskbarScrollbarColor', 'debugLogging', 'debugVerbose'];
     const pinningKeys = ['pinnedButton', 'pinnedHeaderColor', 'pinnedDoubleTapping', 'rememberPinnedWindows'];
 
     const taskbarHeader = $('<h3 class="wc-settings-header">Taskbar</h3>');

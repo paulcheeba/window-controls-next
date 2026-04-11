@@ -19,7 +19,7 @@ Dock a fixed taskbar above or below the Foundry canvas. It nudges the UI and can
 Taskbar buttons are sorted (pinned first, then type, then title), show a tooltip with the full title, and support hover preview. When there are too many buttons, the taskbar button strip scrolls horizontally and shows a thin scrollbar.
 
 ### Minimize, Maximize & Default Size
-Header buttons (and the taskbar right-click menu) let you minimize a sheet instantly to a taskbar button, resize it to 60% × 80% of the canvas area, or snap it back to its configured default dimensions.
+Header buttons (and the taskbar right-click menu) let you minimize a sheet instantly to a taskbar button, resize it to a configurable maximum size (default 60% × 80% of the canvas area), or snap it back to its configured default dimensions. Each button can be individually shown or hidden in module settings.
 
 <img width="538" height="62" alt="image" src="https://github.com/user-attachments/assets/3dcdb099-420b-472d-8879-fbee01f15c0c" />
 

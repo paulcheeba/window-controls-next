@@ -6,12 +6,17 @@ The format is based on Keep a Changelog, and this project aims to follow Semanti
 
 Note: The 13.x versions are the reworked Foundry VTT v13+ fork/modernization of the original module.
 
+## [13.1.2.5]
+### Added
+- **Maximize Width / Height settings**: Two new client settings (10–100%, step 5) control the size the Maximize button resizes a window to. Defaults remain 60% wide × 80% tall of the `#board` area.
+- **Default Size Button / Maximize Button visibility settings**: Independent enabled/disabled toggles for the Default Size and Maximize header buttons, matching the existing Minimize Button setting. All three default to enabled. The new settings appear in the Taskbar section of module settings, grouped after Minimize Button.
+
 ## [13.1.2.4]
 ### Changed
 - **Maximize behaviour**: The maximize button no longer snaps the window to a fixed corner. It now resizes the window in place to 60% × 80% of the `#board` area via `setPosition()`, so the window remains draggable and the size sticks on drag.
 - **Button order**: Default Size and Maximize buttons are now ordered Default Size → Maximize (left to right) for logical progression.
 ### Fixed
-- **Pinned journal flash on load**: Remembered pinned AppV2 windows (journals and other complex sheets) were briefly visible on world load before being hidden to the taskbar. Root cause: Foundry's `ApplicationV2.render(force=true)` unconditionally calls `maximize().then(bringToFront())` after all render hooks complete, overriding our hook's `display:none`. The fix temporarily overrides `maximize` to a no-op on the sheet instance before calling `render`, then restores it and explicitly minimises after the render promise resolves — eliminating the race entirely. The 250ms retry poller (`_persistRenderMinimizeRetry`) is retained as a fallback for slow renderers and to restore saved position / sync the taskbar button. Also mitigates Issue #9 (GM Screen module seeing WCN-restored journals open momentarily on load).
+- **Pinned journal flash on load**: Remembered pinned AppV2 windows (journals and other complex sheets) were visible on world load and not being hidden to the taskbar. Root cause: Foundry's `ApplicationV2.render(force=true)` unconditionally calls `maximize().then(bringToFront())` after all render hooks complete, overriding our hook's `display:none`. The fix temporarily overrides `maximize` to a no-op on the sheet instance before calling `render`, then restores it and explicitly minimises after the render promise resolves — eliminating the race entirely. The 250ms retry poller (`_persistRenderMinimizeRetry`) is retained as a fallback for slow renderers and to restore saved position / sync the taskbar button. Also mitigates Issue #9 (GM Screen module seeing WCN-restored journals open momentarily on load).
 - **Sweep after `window-controls-next.ready`**: Fixed iteration over `foundry.applications.instances` (a `Map`) — `Object.values()` on a Map yields empty results; now uses `Array.from(instances.values())`.
 - **Pin toggle cross-contamination**: Clicking pin on an AppV2 window was accidentally toggling unrelated AppV1 windows. Root cause: the linked-window lookup used `appId` equality, but AppV2 apps have no `appId` (`undefined === undefined` matched any AppV1 window with no `targetApp`). The lookup is now guarded to only run when `appId` is a real value.
 
