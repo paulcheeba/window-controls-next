@@ -9,10 +9,10 @@
     }
   ],
   "description": "<p>Window Taskbar and Window Buttons: Minimize and Pin floating Windows to a top or bottom taskbar. Updated for Foundry VTT v13+.</p>",
-  "version": "13.1.2.5",
+  "version": "14.0.0.0",
   "compatibility": {
     "minimum": "13",
-    "verified": "13.351",
+    "verified": "14",
     "maximum": "14"
   },
   "relationships": {
@@ -38,24 +38,6 @@
       "lang": "en",
       "name": "English",
       "path": "lang/en.json",
-      "flags": {}
-    },
-    {
-      "lang": "es",
-      "name": "Español",
-      "path": "lang/es.json",
-      "flags": {}
-    },
-    {
-      "lang": "de",
-      "name": "Deutsch",
-      "path": "lang/de.json",
-      "flags": {}
-    },
-    {
-      "lang": "ja",
-      "name": "日本語",
-      "path": "lang/ja.json",
       "flags": {}
     }
   ],

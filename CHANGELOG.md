@@ -4,7 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project aims to follow Semantic Versioning.
 
-Note: The 13.x versions are the reworked Foundry VTT v13+ fork/modernization of the original module.
+Note: The 13.x versions are the reworked Foundry VTT v13+ fork/modernization of the original module. 14.x versions target Foundry VTT v14.
+
+## [14.0.0.0]
+### Changed
+- **Foundry VTT v14 compatibility**: Verified against Foundry VTT v14. Compatibility updated to minimum v13, verified v14, maximum v14.
+- **English-only localisation**: All non-English language files (de, es, ja) have been removed. Foundry VTT's AI content policy prohibits AI-generated translations, and no human-verified translations are currently available. The module now ships with English only (`lang/en.json`). Community-contributed translations are welcome via pull request.
 
 ## [13.1.2.5]
 ### Added
