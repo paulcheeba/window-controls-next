@@ -6,6 +6,10 @@ The format is based on Keep a Changelog, and this project aims to follow Semanti
 
 Note: The 13.x versions are the reworked Foundry VTT v13+ fork/modernization of the original module. 14.x versions target Foundry VTT v14.
 
+## [14.0.0.1]
+### Fixed
+- **Issue #12 — Inline header button sizing**: `.window-controls-inline-btn` now has an explicit `width: 24px; height: 24px;`, matching standard Foundry header button dimensions. Previously only flex `gap` spacing was defined, causing misaligned button hit-areas in UI-heavy setups (e.g. D&D 5e + TidySheets + Carolingian). (Credit: crazyblot)
+
 ## [14.0.0.0]
 > First public release for Foundry VTT v14. Incorporates all changes from pre-release beta versions 13.1.2.0 – 13.1.2.5.
 

@@ -308,6 +308,8 @@ input[type="color"].wc-color-picker::-moz-color-swatch {
 .window-controls-inline .window-controls-inline-btn {
     display: inline-flex !important;
     flex: 0 0 auto;
+    width: 24px;
+    height: 24px;
     align-items: center !important;
     justify-content: center !important;
 }
