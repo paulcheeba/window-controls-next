@@ -1,3 +1,30 @@
+# Window Controls Next v14.0.0.1 (2026-04-14)
+
+Patch release fixing inline header button sizing reported by the community.
+
+Added:
+- None
+
+Changed:
+- None
+
+Fixed:
+- **Issue #12 — Inline header button sizing**: `.window-controls-inline-btn` now has an explicit `width: 24px; height: 24px;`, matching standard Foundry header button dimensions. Previously only flex `gap` spacing was defined, causing misaligned button hit-areas in UI-heavy setups (e.g. D&D 5e + TidySheets + Carolingian). (Credit: crazyblot)
+
+Breaking Changes:
+- None
+
+Manifest URL:
+- https://github.com/paulcheeba/window-controls-next/releases/download/v14.0.0.1/module.json
+
+Patreon:
+- OverEngineeredVTT - https://www.patreon.com/cw/u45257624
+
+Discord:
+- OverEngineeredVTT - Window Controls Next - https://discord.com/channels/1038881475732451368/1454747458180485160
+
+---
+
 # Window Controls Next v14.0.0.0 (2026-04-11)
 
 First public release for Foundry VTT v14. Bundles all features and fixes developed across six pre-release beta versions (13.1.2.0 – 13.1.2.5).
