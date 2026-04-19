@@ -6,7 +6,24 @@ The format is based on Keep a Changelog, and this project aims to follow Semanti
 
 Note: The 13.x versions are the reworked Foundry VTT v13+ fork/modernization of the original module. 14.x versions target Foundry VTT v14.
 
-## [14.0.0.2]
+## [14.0.1.0]
+### Added
+- **Disable Window Controls (client setting)**: A new per-user toggle (default: off) completely disables all WCN features for that client — no taskbar, no header buttons, no pinning, no single-instance enforcement. Minimize/maximize/close revert to Foundry defaults. GMs retain control over world-scoped settings; this only affects the individual user who enables it.
+- **Client-scoped settings**: The following settings have been changed from world-scope to client-scope, allowing each user to configure their own preferences independently of the GM:
+  - Taskbar Location
+  - Minimize Button
+  - Default Size Button
+  - Maximize Button
+  - Max Width / Max Height
+  - Taskbar Color
+  - Taskbar Scrollbar Color
+  - Taskbar Width
+  - Pinned Button
+  - Pinned Header Color
+  - Remember Pinned Windows
+- **Setting scope labels**: All setting hints now include `(Client)` or `(World)` to clearly indicate their scope.
+- **Debug settings hidden from non-GM players**: "Enable Debugging" and "Verbose Debug Logs" are no longer visible in the settings UI for non-GM users.
+
 ### Fixed
 - **Issue #14 — PF1e ChangeEditor (and similar sub-editors) closed on open**: `_enforceSingleInstanceByPersistentId` was running on every AppV1 render, including document-relative sub-editors like PF1e's `ChangeEditor`. These share a UUID with their parent item sheet, causing WCN to treat them as duplicates and immediately close them. The fix adds an early `_isTargetSheet` guard so only WCN-managed canonical sheets are subject to single-instance enforcement. (Credit: Runemaster24)
 

@@ -51,6 +51,30 @@ When enabled, pinned sheets are remembered by Document UUID and restored on next
 ### Taskbar Width
 The taskbar can be set to Canvas width or Full width depending on your preference. Some Game Systems may alter the sidebar in ways that alter the Window Controls Next taskbar, setting Taskbar Width to Canvas should help.
 
+## Settings
+
+Settings are scoped so each user can control their own experience without affecting others. The scope of each setting is noted below.
+
+| Setting | Scope | Notes |
+|---|---|---|
+| Disable Window Controls | **Client** | Completely disables all WCN features for this user only. |
+| Taskbar Location | **Client** | Top taskbar, bottom taskbar, or disabled. |
+| Taskbar Width | **Client** | Full width or canvas-only (stops at the sidebar edge). |
+| Taskbar Color | **Client** | Background color of the taskbar. |
+| Taskbar Scrollbar Color | **Client** | Color of the taskbar's horizontal scrollbar thumb. |
+| Minimize Button | **Client** | Show or hide the minimize header button. |
+| Default Size Button | **Client** | Show or hide the default size header button. |
+| Maximize Button | **Client** | Show or hide the maximize header button. |
+| Max Width (%) | **Client** | Width the window resizes to when maximized (10–100% of canvas). |
+| Max Height (%) | **Client** | Height the window resizes to when maximized (10–100% of canvas). |
+| Minimize Everything on Outside Click | **World** | Minimizes all windows when clicking the canvas board. |
+| Pinned Button | **Client** | Show or hide the pin header button. |
+| Pinned Header Color | **Client** | Header overlay color for pinned windows. |
+| Double ESC to minimize Pinned Windows | **World** | Requires ESC to be pressed twice to minimize a pinned window. |
+| Remember Pinned Windows | **Client** | Restore pinned windows automatically on next session load. |
+| Enable Debugging | **Client** *(GM only)* | Enables verbose debug logging to the browser console. |
+| Verbose Debug Logs | **Client** *(GM only)* | Logs every internal method call (very noisy). |
+
 ## Third-Party Module Integration
 
 Standalone AppV2 windows (those not backed by a Foundry Document) are not managed by WCN by default. Module developers can opt their applications in by calling `WindowControls.registerApp()` inside a `window-controls-next.ready` hook callback.

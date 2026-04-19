@@ -866,6 +866,10 @@ class WindowControls {
     return setting === 'persistentTop' || setting === 'persistentBottom';
   }
 
+  static _isWcnDisabled() {
+    try { return game.settings.get(WindowControls.MODULE_ID, 'wcDisabled') === true; } catch { return false; }
+  }
+
   static _getTaskbarSection() {
     return document.getElementById('window-controls-persistent');
   }
@@ -941,6 +945,11 @@ class WindowControls {
   }
 
   static _applyTaskbarDockLayout() {
+    if (WindowControls._isWcnDisabled()) {
+      const existing = WindowControls._getTaskbarSection();
+      if (existing?.parentElement) existing.parentElement.removeChild(existing);
+      return;
+    }
     const setting = WindowControls._getTaskbarSetting();
 
     // Always-on, low-noise state log (only when it changes).
@@ -1453,6 +1462,7 @@ class WindowControls {
   }
 
   static _ensureInlineControlsV2(app, rootElement) {
+    if (WindowControls._isWcnDisabled()) return;
     if (WindowControls._shouldIgnoreApp(app)) return;
     const el = rootElement ?? WindowControls._getElement(app);
     if (!el) return;
@@ -1969,6 +1979,7 @@ class WindowControls {
   }
 
   static _injectHeaderControlsV1(app, buttons) {
+    if (WindowControls._isWcnDisabled()) return;
     if (WindowControls._shouldIgnoreApp(app)) return;
 
     // Idempotency: skip if WCN buttons are already present (prototype wrap + hook both call this).
@@ -2086,6 +2097,15 @@ class WindowControls {
   }
 
   static initSettings() {
+    game.settings.register(WindowControls.MODULE_ID, 'wcDisabled', {
+      name: game.i18n.localize("WindowControls.WcDisabledName"),
+      hint: game.i18n.localize("WindowControls.WcDisabledHint"),
+      scope: 'client',
+      config: true,
+      type: Boolean,
+      default: false,
+      onChange: WindowControls.debouncedReload
+    });
     game.settings.register(WindowControls.MODULE_ID, 'organizedMinimize', {
       name: game.i18n.localize("WindowControls.OrganizedMinimizeName"),
       hint: game.i18n.localize("WindowControls.OrganizedMinimizeHint"),
@@ -2103,7 +2123,7 @@ class WindowControls {
     game.settings.register(WindowControls.MODULE_ID, 'minimizeButton', {
       name: game.i18n.localize("WindowControls.MinimizeButtonName"),
       hint: game.i18n.localize("WindowControls.MinimizeButtonHint"),
-      scope: 'world',
+      scope: 'client',
       config: true,
       type: String,
       choices: {
@@ -2116,7 +2136,7 @@ class WindowControls {
     game.settings.register(WindowControls.MODULE_ID, 'defaultSizeButton', {
       name: game.i18n.localize("WindowControls.DefaultSizeButtonName"),
       hint: game.i18n.localize("WindowControls.DefaultSizeButtonHint"),
-      scope: 'world',
+      scope: 'client',
       config: true,
       type: String,
       choices: {
@@ -2129,7 +2149,7 @@ class WindowControls {
     game.settings.register(WindowControls.MODULE_ID, 'maximizeButton', {
       name: game.i18n.localize("WindowControls.MaximizeButtonName"),
       hint: game.i18n.localize("WindowControls.MaximizeButtonHint"),
-      scope: 'world',
+      scope: 'client',
       config: true,
       type: String,
       choices: {
@@ -2142,7 +2162,7 @@ class WindowControls {
     game.settings.register(WindowControls.MODULE_ID, 'pinnedButton', {
       name: game.i18n.localize("WindowControls.PinnedButtonName"),
       hint: game.i18n.localize("WindowControls.PinnedButtonHint"),
-      scope: 'world',
+      scope: 'client',
       config: true,
       type: String,
       choices: {
@@ -2172,7 +2192,7 @@ class WindowControls {
     game.settings.register(WindowControls.MODULE_ID, 'rememberPinnedWindows', {
       name: game.i18n.localize("WindowControls.RememberPinnedName"),
       hint: game.i18n.localize("WindowControls.RememberPinnedHint"),
-      scope: 'world',
+      scope: 'client',
       config: true,
       type: Boolean,
       default: false,
@@ -2185,7 +2205,7 @@ class WindowControls {
     game.settings.register(WindowControls.MODULE_ID, 'pinnedHeaderColor', {
       name: game.i18n.localize("WindowControls.PinnedHeaderColorName"),
       hint: game.i18n.localize("WindowControls.PinnedHeaderColorHint"),
-      scope: 'world',
+      scope: 'client',
       config: true,
       type: String,
       default: "#ff8800",
@@ -2196,7 +2216,7 @@ class WindowControls {
     game.settings.register(WindowControls.MODULE_ID, 'taskbarColor', {
       name: game.i18n.localize("WindowControls.TaskbarColorName"),
       hint: game.i18n.localize("WindowControls.TaskbarColorHint"),
-      scope: 'world',
+      scope: 'client',
       config: true,
       type: String,
       default: "#0000",
@@ -2208,7 +2228,7 @@ class WindowControls {
     game.settings.register(WindowControls.MODULE_ID, 'taskbarScrollbarColor', {
       name: game.i18n.localize("WindowControls.TaskbarScrollbarColorName"),
       hint: game.i18n.localize("WindowControls.TaskbarScrollbarColorHint"),
-      scope: 'world',
+      scope: 'client',
       config: true,
       type: String,
       default: "",
@@ -2220,7 +2240,7 @@ class WindowControls {
     game.settings.register(WindowControls.MODULE_ID, 'taskbarWidth', {
       name: game.i18n.localize("WindowControls.TaskbarWidthName"),
       hint: game.i18n.localize("WindowControls.TaskbarWidthHint"),
-      scope: 'world',
+      scope: 'client',
       config: true,
       type: String,
       choices: {
@@ -2329,6 +2349,7 @@ class WindowControls {
     });
 
     Hooks.on('renderApplicationV2', (app, element) => {
+      if (WindowControls._isWcnDisabled()) return;
       WindowControls._ensureInlineControlsV2(app, element);
       WindowControls._maybeCaptureFirstRenderSize(app);
 
@@ -2360,6 +2381,7 @@ class WindowControls {
     });
 
     Hooks.on('renderApplicationV1', (app, html) => {
+      if (WindowControls._isWcnDisabled()) return;
       const el = html?.[0];
       if (!(el instanceof HTMLElement)) return;
       WindowControls._maybeCaptureFirstRenderSize(app);
@@ -2501,18 +2523,21 @@ class WindowControls {
 
       if (WindowControls._isTaskbarMode(settingOrganized)) {
         wrapAppV1('minimize', function (wrapped, ...args) {
+          if (WindowControls._isWcnDisabled()) return wrapped(...args);
           if (WindowControls._shouldIgnoreApp(this)) return wrapped(...args);
           WindowControls.organizedMinimize(this, settingOrganized);
           return Promise.resolve();
         }, 'MIXED');
 
         wrapAppV1('maximize', function (wrapped, ...args) {
+          if (WindowControls._isWcnDisabled()) return wrapped(...args);
           if (WindowControls._shouldIgnoreApp(this)) return wrapped(...args);
           WindowControls.organizedRestore(this, settingOrganized);
           return Promise.resolve();
         }, 'MIXED');
 
         wrapAppV1('close', function (wrapped, ...args) {
+          if (WindowControls._isWcnDisabled()) return wrapped(...args);
           WindowControls.organizedClose(this, settingOrganized);
           return wrapped(...args).then(() => {
             WindowControls._removeTaskbarButton(this);
@@ -2523,18 +2548,21 @@ class WindowControls {
       // AppV2 windows require wrapping their lifecycle methods separately.
       if (WindowControls._isTaskbarMode(settingOrganized)) {
         wrapAppV2('minimize', async function (wrapped, ...args) {
+          if (WindowControls._isWcnDisabled()) return await wrapped(...args);
           if (WindowControls._shouldIgnoreApp(this)) return await wrapped(...args);
           WindowControls.organizedMinimize(this, settingOrganized);
           return;
         }, 'MIXED');
 
         wrapAppV2('maximize', async function (wrapped, ...args) {
+          if (WindowControls._isWcnDisabled()) return await wrapped(...args);
           if (WindowControls._shouldIgnoreApp(this)) return await wrapped(...args);
           WindowControls.organizedRestore(this, settingOrganized);
           return this;
         }, 'MIXED');
 
         wrapAppV2('close', async function (wrapped, ...args) {
+          if (WindowControls._isWcnDisabled()) { await wrapped(...args); return; }
           WindowControls.organizedClose(this, settingOrganized);
           await wrapped(...args);
           WindowControls._removeTaskbarButton(this);
@@ -2928,6 +2956,10 @@ class WindowControls {
     const taskbarHeader = $('<h3 class="wc-settings-header">Taskbar</h3>');
     const pinningHeader = $('<h3 class="wc-settings-header">Pinning</h3>');
 
+    // WCN master kill-switch comes first, above section headers.
+    const wcDisabledGroup = getGroup('wcDisabled');
+    if (wcDisabledGroup?.length) moduleRoot.append(wcDisabledGroup);
+
     // Move settings into a stable order with section headers.
     moduleRoot.append(taskbarHeader);
     for (const key of taskbarKeys) {
@@ -2964,6 +2996,12 @@ class WindowControls {
     WindowControls._enhanceColorPickerSetting($html, 'taskbarColor');
     WindowControls._enhanceColorPickerSetting($html, 'taskbarScrollbarColor');
     WindowControls._enhanceColorPickerSetting($html, 'pinnedHeaderColor');
+
+    // Hide GM-only settings from non-GM players.
+    if (!game.user?.isGM) {
+      getGroup('debugLogging')?.remove();
+      getGroup('debugVerbose')?.remove();
+    }
 
     // Foundry SettingsConfig escapes HTML in setting labels, so apply bold styling here.
     const debugGroup = getGroup('debugLogging');

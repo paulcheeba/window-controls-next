@@ -1,12 +1,14 @@
-# Window Controls Next v14.0.0.2 (2026-04-19)
+# Window Controls Next v14.0.1.0 (2026-04-19)
 
-Patch release fixing sub-editor dialogs being closed by WCN on open (Issue #14).
+Patch release fixing sub-editor dialogs being closed by WCN on open (Issue #14), plus user-configurable per-client settings.
 
 Added:
-- None
+- **Disable Window Controls (client)**: New per-user toggle to completely disable all WCN features for that client.
+- **Client-scoped settings**: The following settings are now per-client (previously world-scoped): Taskbar Location, Minimize Button, Default Size Button, Maximize Button, Max Width, Max Height, Taskbar Color, Taskbar Scrollbar Color, Taskbar Width, Pinned Button, Pinned Header Color, Remember Pinned Windows.
+- **Debug settings restricted to GM**: "Enable Debugging" and "Verbose Debug Logs" are no longer visible to non-GM players in the settings UI.
 
 Changed:
-- None
+- All setting hints now include (Client) or (World) to indicate their scope.
 
 Fixed:
 - **Issue #14 — PF1e ChangeEditor closed immediately on open**: Sub-editors that share a document UUID with their parent sheet (e.g. PF1e's ChangeEditor) were being treated as duplicate windows and closed by WCN's single-instance enforcement. Fixed by guarding enforcement to only WCN-managed canonical sheets. (Credit: Runemaster24)
@@ -15,7 +17,7 @@ Breaking Changes:
 - None
 
 Manifest URL:
-- https://github.com/paulcheeba/window-controls-next/releases/download/v14.0.0.2/module.json
+- https://github.com/paulcheeba/window-controls-next/releases/download/v14.0.1.0/module.json
 
 Patreon:
 - OverEngineeredVTT - https://www.patreon.com/cw/u45257624
