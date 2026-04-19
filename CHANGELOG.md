@@ -6,6 +6,10 @@ The format is based on Keep a Changelog, and this project aims to follow Semanti
 
 Note: The 13.x versions are the reworked Foundry VTT v13+ fork/modernization of the original module. 14.x versions target Foundry VTT v14.
 
+## [14.0.0.2]
+### Fixed
+- **Issue #14 — PF1e ChangeEditor (and similar sub-editors) closed on open**: `_enforceSingleInstanceByPersistentId` was running on every AppV1 render, including document-relative sub-editors like PF1e's `ChangeEditor`. These share a UUID with their parent item sheet, causing WCN to treat them as duplicates and immediately close them. The fix adds an early `_isTargetSheet` guard so only WCN-managed canonical sheets are subject to single-instance enforcement. (Credit: Runemaster24)
+
 ## [14.0.0.1]
 ### Fixed
 - **Issue #12 — Inline header button sizing**: `.window-controls-inline-btn` now has an explicit `width: 24px; height: 24px;`, matching standard Foundry header button dimensions. Previously only flex `gap` spacing was defined, causing misaligned button hit-areas in UI-heavy setups (e.g. D&D 5e + TidySheets + Carolingian). (Credit: crazyblot)

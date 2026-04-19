@@ -1,0 +1,81 @@
+name: Post to Discord
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (print message to logs only, do not send)"
+        type: boolean
+        required: true
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract top Discord post entry
+        id: extract
+        shell: bash
+        run: |
+          set -euo pipefail
+          NOTES_FILE=".github/devFolder/posts/discordReleasePosts.md"
+
+          # Extract from the top of the file until the first '---' separator
+          MESSAGE=$(awk '/^[[:space:]]*---[[:space:]]*$/ { exit } { print }' "$NOTES_FILE")
+
+          if [ -z "$MESSAGE" ]; then
+            echo "No content found above the first '---' separator in $NOTES_FILE" >&2
+            exit 1
+          fi
+
+          # GitHub Actions multiline output
+          {
+            echo "message<<EOF"
+            echo "$MESSAGE"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Print message (dry run)
+        if: ${{ inputs.dry_run == true }}
+        run: |
+          echo "=== DRY RUN — message that would be sent ==="
+          cat << 'ENDOFMSG'
+          ${{ steps.extract.outputs.message }}
+          ENDOFMSG
+
+      - name: Post to Discord webhook
+        if: ${{ inputs.dry_run == false }}
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -z "${DISCORD_WEBHOOK_URL:-}" ]; then
+            echo "DISCORD_WEBHOOK_URL secret is not set." >&2
+            exit 1
+          fi
+
+          # Discord webhook payload — content field, max 2000 chars
+          MESSAGE='${{ steps.extract.outputs.message }}'
+          PAYLOAD=$(jq -n --arg content "$MESSAGE" '{"content": $content}')
+
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD" \
+            "$DISCORD_WEBHOOK_URL")
+
+          echo "Discord webhook response: $HTTP_STATUS"
+          if [[ "$HTTP_STATUS" != "204" ]]; then
+            echo "Unexpected status code from Discord: $HTTP_STATUS" >&2
+            exit 1
+          fi
+
+          echo "Message posted successfully."

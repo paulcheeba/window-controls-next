@@ -1,3 +1,30 @@
+# Window Controls Next v14.0.0.2 (2026-04-19)
+
+Patch release fixing sub-editor dialogs being closed by WCN on open (Issue #14).
+
+Added:
+- None
+
+Changed:
+- None
+
+Fixed:
+- **Issue #14 — PF1e ChangeEditor closed immediately on open**: Sub-editors that share a document UUID with their parent sheet (e.g. PF1e's ChangeEditor) were being treated as duplicate windows and closed by WCN's single-instance enforcement. Fixed by guarding enforcement to only WCN-managed canonical sheets. (Credit: Runemaster24)
+
+Breaking Changes:
+- None
+
+Manifest URL:
+- https://github.com/paulcheeba/window-controls-next/releases/download/v14.0.0.2/module.json
+
+Patreon:
+- OverEngineeredVTT - https://www.patreon.com/cw/u45257624
+
+Discord:
+- OverEngineeredVTT - Window Controls Next - https://discord.com/channels/1038881475732451368/1454747458180485160
+
+---
+
 # Window Controls Next v14.0.0.1 (2026-04-14)
 
 Patch release fixing inline header button sizing reported by the community.

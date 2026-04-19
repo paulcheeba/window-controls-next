@@ -609,6 +609,12 @@ class WindowControls {
   }
 
   static async _enforceSingleInstanceByPersistentId(app) {
+    // Only enforce for apps WCN manages. Sub-sheets and document-relative editors
+    // (e.g. PF1e ChangeEditor) share a document UUID with the canonical sheet but
+    // are NOT the canonical sheet — _isTargetSheet returns false for them.
+    // Without this guard they were incorrectly identified as duplicates and closed.
+    if (!WindowControls._isTargetSheet(app)) return;
+
     // Only enforce for real documents; allow SidebarTab popouts.
     const persistentId = WindowControls._getAppDocumentUuid(app);
     if (!persistentId) return;
