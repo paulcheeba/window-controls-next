@@ -1,5 +1,6 @@
 class WindowControls {
 
+  // ── Constants & State ─────────────────────────────────────────────────────
   // Known default sizes for Foundry core sheets that don't declare DEFAULT_OPTIONS.position
   // or defaultOptions width/height. Keyed by constructor name. System sheet subclasses
   // (e.g. JournalEntrySheet5e) are included since they inherit the same default dimensions.
@@ -17,20 +18,10 @@ class WindowControls {
 
   static _rememberedPinnedIds = new Set();
 
-  static minimizedStash = {};
-  static cssMinimizedSize = 150;
-  static cssMinimizedBottomBaseline = 70;
-  static cssMinimizedTopBaseline = 0;
   // Maximum z-index WCN will assign to floating windows.
   // Keeps windows below --z-index-tooltip (9999) and --z-index-notification (99999).
   // --z-index-window baseline is 100; 199 gives 100 window slots before the ceiling.
   static WCN_Z_MAX = 199;
-  static cssTopBarLeftStart = 120;
-  static cssTopBarPersistentLeftStart = -5;
-  static cssBottomBarLeftStart = 250;
-
-  static getTaskbarTop = () => 2;
-  static getTaskbarBot = () => $("#board").height() - 40;
 
   static debouncedReload = (foundry?.utils?.debounce ?? globalThis.debounce)(() => window.location.reload(), 100);
 
@@ -46,11 +37,8 @@ class WindowControls {
   // 'window-controls-next.ready' hook to include their standalone AppV2 windows.
   static _registeredAppClasses = new Set();
 
-  /**
-   * Register a third-party AppV2 class for WCN management (taskbar, pin, minimize).
-   * Call this from within a Hooks.once('window-controls-next.ready', ...) callback.
-   * @param {Function|string} appClassOrName  The class constructor or its string name.
-   */
+  // Lets third-party modules register their AppV2 windows so WCN manages them (taskbar, pin, minimize).
+  // Call this from a Hooks.once('window-controls-next.ready') callback.
   static registerApp(appClassOrName) {
     if (!appClassOrName) return;
     WindowControls._registeredAppClasses.add(appClassOrName);
@@ -64,12 +52,16 @@ class WindowControls {
   static _shownAppV1Warning = false;
   static _sidebarResizeObserver = null;
 
+  // ── Logging & Debug ───────────────────────────────────────────────────────
+
+  // Prints to the browser console regardless of whether debug mode is enabled.
   static _logAlways(...args) {
     try {
       console.log('Window Controls Next |', ...args);
     } catch { /* ignore */ }
   }
 
+  // Returns the current WCN module version string.
   static _getModuleVersion() {
     try {
       const mod = game?.modules?.get?.(WindowControls.MODULE_ID);
@@ -79,6 +71,7 @@ class WindowControls {
     }
   }
 
+  // Converts a taskbar setting value into a short readable label: 'top', 'bottom', or 'off'.
   static _getTaskbarStateLabel(setting) {
     if (!WindowControls._isTaskbarMode(setting)) return 'off';
     if (setting === 'persistentTop') return 'top';
@@ -86,6 +79,7 @@ class WindowControls {
     return 'on';
   }
 
+  // Returns true when the user has enabled debug logging in module settings.
   static _isDebugLoggingEnabled() {
     try {
       return game?.settings?.get(WindowControls.MODULE_ID, 'debugLogging') === true;
@@ -94,6 +88,7 @@ class WindowControls {
     }
   }
 
+  // Returns true when both debug logging and verbose mode are on.
   static _isVerboseDebugLoggingEnabled() {
     try {
       if (!WindowControls._isDebugLoggingEnabled()) return false;
@@ -103,16 +98,20 @@ class WindowControls {
     }
   }
 
+  // Logs a message only when debug mode is enabled.
   static _debug(...args) {
     if (!WindowControls._isDebugLoggingEnabled()) return;
     console.log('Window Controls Next |', ...args);
   }
 
+  // Logs a message only when verbose debug mode is enabled (very noisy — method call tracing).
   static _debugVerbose(...args) {
     if (!WindowControls._isVerboseDebugLoggingEnabled()) return;
     console.debug('Window Controls Next |', ...args);
   }
 
+  // Captures a detailed snapshot of the taskbar, #interface, and #board positions and logs it.
+  // Useful for diagnosing layout issues when the taskbar shifts unexpectedly.
   static _debugDockLayoutSnapshot(phase, setting) {
     if (!WindowControls._isDebugLoggingEnabled()) return;
     try {
@@ -259,6 +258,11 @@ class WindowControls {
     }
   }
 
+  // ── Taskbar Barrier ───────────────────────────────────────────────────────
+  // These methods prevent windows from being dragged behind the taskbar.
+
+  // Installs pointer-event listeners that log when a dragged window touches the taskbar edge.
+  // Only active when debug logging is on.
   static _installTaskbarBarrierWatcher() {
     if (WindowControls._barrierWatcherInstalled) return;
     WindowControls._barrierWatcherInstalled = true;
@@ -381,6 +385,7 @@ class WindowControls {
     document.addEventListener('mouseup', onPointerUp, true);
   }
 
+  // Returns the taskbar element's bounding rect and which edge it is on ('top' or 'bottom').
   static _getTaskbarBarrierInfo() {
     const bar = document.getElementById('window-controls-persistent');
     if (!(bar instanceof HTMLElement)) return null;
@@ -395,6 +400,7 @@ class WindowControls {
     return { rect, side, marginPx: 2 };
   }
 
+  // Returns the raw HTML element for an app, handling both AppV1 (jQuery) and AppV2.
   static _getAppHTMLElement(app) {
     const el = app?.element ?? app?._element;
     if (el instanceof HTMLElement) return el;
@@ -403,6 +409,7 @@ class WindowControls {
     return null;
   }
 
+  // If a window overlaps the taskbar, nudges it to the nearest clear edge so it stays visible.
   static _clampAppAgainstTaskbarBarrier(app, barrier) {
     if (!app || !barrier) return false;
     if (WindowControls._shouldIgnoreApp(app)) return false;
@@ -469,6 +476,7 @@ class WindowControls {
     return true;
   }
 
+  // Runs the barrier clamp on every currently open window.
   static _enforceAllWindowsAgainstTaskbarBarrier() {
     const barrier = WindowControls._getTaskbarBarrierInfo();
     if (!barrier) return;
@@ -479,6 +487,7 @@ class WindowControls {
     }
   }
 
+  // Installs a pointer-release listener that clamps all windows against the barrier after every drag.
   static _installTaskbarBarrierEnforcer() {
     if (WindowControls._barrierEnforcerInstalled) return;
     WindowControls._barrierEnforcerInstalled = true;
@@ -495,6 +504,7 @@ class WindowControls {
     window.addEventListener('blur', onRelease, true);
   }
 
+  // Builds a small summary object about an app (type, id, title, minimized) for use in log output.
   static _debugDescribeApp(app) {
     try {
       const ctor = app?.constructor?.name ?? 'App';
@@ -513,6 +523,10 @@ class WindowControls {
     }
   }
 
+  // ── Utility Helpers ───────────────────────────────────────────────────────
+
+  // Patches a method on a prototype so WCN code runs alongside the original.
+  // Used as a manual fallback when libWrapper is not available.
   static _wrapMethod({ target, method, wrapper, name }) {
     const original = target?.[method];
     if (typeof original !== 'function') return;
@@ -525,6 +539,10 @@ class WindowControls {
   }
 
 
+  // ── App Identity & Classification ───────────────────────────────────────────────
+  // These methods identify apps and decide whether WCN should manage them.
+
+  // Returns true if a window is currently minimized or hidden to the taskbar.
   static _isMinimized(app) {
     // In taskbar mode, a hidden-to-taskbar window should be treated as minimized.
     if (WindowControls._isHiddenToTaskbar(app)) return true;
@@ -532,12 +550,14 @@ class WindowControls {
     return !!app?._minimized;
   }
 
+  // Returns the Foundry Document UUID for an app (e.g. 'Actor.abc123'), or null for non-document windows.
   static _getAppDocumentUuid(app) {
     const docUuid = app?.document?.uuid ?? app?.object?.uuid;
     if (typeof docUuid === 'string' && docUuid.length) return docUuid;
     return null;
   }
 
+  // Returns true if WCN should manage this app. Excludes Dialogs, sub-editors, and non-document windows.
   static _isTargetSheet(app) {
     if (!app) return false;
 
@@ -566,10 +586,7 @@ class WindowControls {
     return true;
   }
 
-  /**
-   * Stable identity used for persistence (remember pinned) and for de-duplicating sheets.
-   * IMPORTANT: this must be resolvable after a reload.
-   */
+  // Returns the stable, reload-safe ID for an app (its Document UUID). Used for pin persistence.
   static _getAppPersistentId(app) {
     if (!app) return null;
 
@@ -577,10 +594,8 @@ class WindowControls {
     return WindowControls._getAppDocumentUuid(app);
   }
 
-  /**
-   * Runtime identity for taskbar bookkeeping.
-   * Prefer per-instance UUIDs when available (AppV2), otherwise fall back to a persisted id.
-   */
+  // Returns the best available runtime ID for an app within the current session.
+  // Used for taskbar bookkeeping (not persisted across reloads).
   static _getAppRuntimeId(app) {
     if (!app) return null;
 
@@ -594,6 +609,7 @@ class WindowControls {
     return null;
   }
 
+  // Returns a unique key for the app, generating a temporary fallback key if no UUID is available.
   static _getAppKey(app) {
     if (!app) return null;
 
@@ -608,6 +624,7 @@ class WindowControls {
     return app._wcAppKey;
   }
 
+  // If the same document's sheet is already open, closes the duplicate and brings the original to front.
   static async _enforceSingleInstanceByPersistentId(app) {
     // Only enforce for apps WCN manages. Sub-sheets and document-relative editors
     // (e.g. PF1e ChangeEditor) share a document UUID with the canonical sheet but
@@ -657,6 +674,9 @@ class WindowControls {
     }
   }
 
+  // ── Taskbar Button Sorting & Hover Preview ────────────────────────────────────
+
+  // Extracts the sortable properties (pinned, type, title) from a taskbar button entry.
   static _getTaskbarSortData(entry, key) {
     const app = entry?.app;
     const pinned = entry?.pinned === true || app?._pinned === true;
@@ -671,6 +691,7 @@ class WindowControls {
     };
   }
 
+  // Re-sorts all taskbar buttons: pinned first, then by document type, then alphabetically by title.
   static _sortTaskbarButtons() {
     const section = WindowControls._getTaskbarSection();
     if (!section) return;
@@ -701,6 +722,7 @@ class WindowControls {
     WindowControls._updateTaskbarFadeClasses();
   }
 
+  // Attaches hover-preview mouse listeners to a taskbar button the first time it is created.
   static _ensureHoverPreviewHandlers(entry, app) {
     if (!entry || !entry.button || !(entry.button instanceof HTMLElement) || !app) return;
     if (entry._wcHoverHandlersInstalled === true) return;
@@ -733,6 +755,7 @@ class WindowControls {
     btn.addEventListener('mouseleave', stopTimerAndMaybeHide);
   }
 
+  // Temporarily shows a hidden window when the user hovers over its taskbar button.
   static _startTaskbarHoverPreview(entry, app) {
     if (!entry || !app) return;
     if (!WindowControls._isHiddenToTaskbar(app)) return;
@@ -761,6 +784,7 @@ class WindowControls {
     }
   }
 
+  // Re-hides the preview window if the user is no longer hovering the button or the window itself.
   static _stopTaskbarHoverPreviewIfNeeded(entry) {
     if (!entry?._wcPreviewing) return;
     if (entry._wcHoveringButton || entry._wcHoveringWindow) return;
@@ -786,6 +810,10 @@ class WindowControls {
     entry._wcPreviewing = false;
   }
 
+  // ── Remembered Pinning ────────────────────────────────────────────────────────────
+  // Stored in the user's Foundry flags so pinned windows reopen on the next session.
+
+  // Returns the list of remembered-pinned entries from the user's flags.
   static _getRememberedPinnedList() {
     const raw = game.user.getFlag(WindowControls._PINNED_FLAG_SCOPE, WindowControls._PINNED_FLAG_KEY);
     if (!raw) return [];
@@ -793,6 +821,7 @@ class WindowControls {
     return [];
   }
 
+  // Rebuilds the in-memory Set of remembered-pinned IDs from stored user flags.
   static _syncRememberedPinnedCache() {
     const list = WindowControls._getRememberedPinnedList();
     const ids = list
@@ -801,6 +830,7 @@ class WindowControls {
     WindowControls._rememberedPinnedIds = new Set(ids);
   }
 
+  // Returns true if this app's document is in the user's remembered-pinned list.
   static _isRememberedPinned(app) {
     if (!game.settings.get(WindowControls.MODULE_ID, 'rememberPinnedWindows')) return false;
     const id = WindowControls._getAppPersistentId(app);
@@ -808,6 +838,9 @@ class WindowControls {
     return WindowControls._rememberedPinnedIds.has(id);
   }
 
+  // ── DOM Element Helpers ────────────────────────────────────────────────────────
+
+  // Returns the HTML element for an app, normalizing AppV1 (jQuery .element[0]) and AppV2.
   static _getElement(app) {
     const el = app?.element;
     if (!el) return null;
@@ -815,11 +848,13 @@ class WindowControls {
     return el?.[0] ?? null;
   }
 
+  // Returns the jQuery wrapper for an app's element.
   static _get$Element(app) {
     const el = WindowControls._getElement(app);
     return el ? $(el) : null;
   }
 
+  // Brings a window to the top of the z-order, capped below tooltip and notification layers.
   static _bringToFront(app) {
     if (!app) return;
 
@@ -853,6 +888,10 @@ class WindowControls {
     el.style.zIndex = String(Math.min(peerMax + 1, WindowControls.WCN_Z_MAX));
   }
 
+  // ── Taskbar Infrastructure ─────────────────────────────────────────────────────
+  // Creation, layout, scroll, and entry tracking for the taskbar element itself.
+
+  // Returns the current taskbar location setting, migrating any old stored values to current ones.
   static _getTaskbarSetting() {
     const raw = game.settings.get(WindowControls.MODULE_ID, 'organizedMinimize');
     // Migrate legacy values to taskbar modes.
@@ -862,18 +901,22 @@ class WindowControls {
     return 'disabled';
   }
 
+  // Returns true if the taskbar is currently enabled (top or bottom mode).
   static _isTaskbarMode(setting) {
     return setting === 'persistentTop' || setting === 'persistentBottom';
   }
 
+  // Returns true if the user has turned off all WCN features for their client.
   static _isWcnDisabled() {
     try { return game.settings.get(WindowControls.MODULE_ID, 'wcDisabled') === true; } catch { return false; }
   }
 
+  // Returns the taskbar <section> element from the DOM, or null if it doesn't exist.
   static _getTaskbarSection() {
     return document.getElementById('window-controls-persistent');
   }
 
+  // Returns the scroll container inside the taskbar that holds the buttons.
   static _getTaskbarButtonsContainer() {
     const section = WindowControls._getTaskbarSection();
     if (!section) return null;
@@ -881,6 +924,7 @@ class WindowControls {
     return section.querySelector(':scope > .wc-taskbar-scroll') ?? section;
   }
 
+  // Creates the taskbar <section> if it doesn't exist, wires up the scroll-wheel and fade handlers.
   static _ensureTaskbarSection() {
     let section = WindowControls._getTaskbarSection();
     if (!section) {
@@ -936,6 +980,7 @@ class WindowControls {
     }
   }
 
+  // Adds or removes the left/right fade-mask CSS classes based on the current scroll position.
   static _updateTaskbarFadeClasses() {
     const container = WindowControls._getTaskbarButtonsContainer();
     if (!(container instanceof HTMLElement)) return;
@@ -944,6 +989,7 @@ class WindowControls {
     container.classList.toggle('wc-fade-right', scrollLeft < scrollWidth - clientWidth - 1);
   }
 
+  // Creates or removes the taskbar element and applies the correct top/bottom body class.
   static _applyTaskbarDockLayout() {
     if (WindowControls._isWcnDisabled()) {
       const existing = WindowControls._getTaskbarSection();
@@ -996,30 +1042,35 @@ class WindowControls {
     });
   }
 
+  // Gets the internal tracking record for a window's taskbar button.
   static _getTaskbarEntry(app) {
     const key = WindowControls._getAppKey(app);
     if (!key) return undefined;
     return WindowControls._taskbarEntries.get(String(key));
   }
 
+  // Saves the internal tracking record for a window's taskbar button.
   static _setTaskbarEntry(app, entry) {
     const key = WindowControls._getAppKey(app);
     if (!key) return;
     WindowControls._taskbarEntries.set(String(key), entry);
   }
 
+  // Removes the internal tracking record for a window's taskbar button.
   static _deleteTaskbarEntry(app) {
     const key = WindowControls._getAppKey(app);
     if (!key) return;
     WindowControls._taskbarEntries.delete(String(key));
   }
 
+  // Returns true if the window's HTML element is currently hidden (the window is on the taskbar).
   static _isHiddenToTaskbar(app) {
     const el = WindowControls._getElement(app);
     if (!el) return false;
     return el.style.display === 'none' || el.dataset?.wcTaskbarHidden === '1';
   }
 
+  // Makes a hidden window's element visible again without triggering Foundry's maximize flow.
   static _showFromTaskbar(app) {
     const el = WindowControls._getElement(app);
     if (!el) return;
@@ -1029,6 +1080,7 @@ class WindowControls {
     if (app?._minimized) app._minimized = false;
   }
 
+  // Hides a window's element so only its taskbar button is visible.
   static _hideToTaskbar(app) {
     const el = WindowControls._getElement(app);
     if (!el) return;
@@ -1038,6 +1090,10 @@ class WindowControls {
     app._minimized = true;
   }
 
+  // ── Taskbar Button Management ────────────────────────────────────────────────
+  // Creating, updating, and removing the per-window buttons that appear in the taskbar.
+
+  // Strips the leading 'Type: ' prefix from a sheet title so the button shows just the document name.
   static _getShortTaskbarTitle(fullTitle) {
     const title = String(fullTitle ?? '').trim();
     if (!title) return '';
@@ -1054,6 +1110,7 @@ class WindowControls {
     return title;
   }
 
+  // Returns the icon class and short title to display on a taskbar button.
   static _getTaskbarButtonLabel(app) {
     const fullTitle = (app?.title ?? app?.options?.title ?? app?.constructor?.name ?? 'Window');
     const short = WindowControls._getShortTaskbarTitle(fullTitle);
@@ -1070,6 +1127,7 @@ class WindowControls {
     return { icon, text: short };
   }
 
+  // Returns true if this window currently has the highest z-index of all open windows.
   static _isTopmost(app) {
     const el = WindowControls._getElement(app);
     if (!el) return false;
@@ -1084,6 +1142,7 @@ class WindowControls {
     return myZ >= maxZ;
   }
 
+  // Creates or refreshes the taskbar button for a window, wiring click and context-menu handlers.
   static _createOrUpdateTaskbarButton(app, { pinned } = {}) {
     WindowControls._ensureTaskbarSection();
     const section = WindowControls._getTaskbarSection();
@@ -1175,6 +1234,7 @@ class WindowControls {
     WindowControls._sortTaskbarButtons();
   }
 
+  // Attaches the right-click context menu to a taskbar button once (safe to call repeatedly).
   static _ensureTaskbarButtonContextMenu(entry, app) {
     if (!entry || !(entry.button instanceof HTMLElement) || !app) return;
     if (entry._wcContextMenuInstalled === true) return;
@@ -1264,6 +1324,7 @@ class WindowControls {
     });
   }
 
+  // Removes a window's taskbar button from the DOM and deletes its tracking entry.
   static _removeTaskbarButton(app) {
     const key = WindowControls._getAppKey(app);
     if (!key) return;
@@ -1274,6 +1335,9 @@ class WindowControls {
     WindowControls._sortTaskbarButtons();
   }
 
+  // ── Window Size & Position ───────────────────────────────────────────────────
+
+  // Resizes a window to fill the configured percentage of the canvas area.
   static async _maximizeToViewport(app) {
     if (WindowControls._isHiddenToTaskbar(app)) {
       await WindowControls._restoreFromTaskbar(app);
@@ -1296,6 +1360,7 @@ class WindowControls {
     }
   }
 
+  // Looks up the default width/height for an app from static options, learned sizes, or CSS.
   static _getDefaultSize(app) {
     // AppV2: DEFAULT_OPTIONS.position may carry width / height.
     const defV2 = app?.constructor?.DEFAULT_OPTIONS?.position;
@@ -1335,6 +1400,7 @@ class WindowControls {
     return { width: undefined, height: undefined };
   }
 
+  // Restores a window to its default size, showing it first if it was hidden to the taskbar.
   static async _restoreDefaultSize(app) {
     if (WindowControls._isHiddenToTaskbar(app)) {
       await WindowControls._restoreFromTaskbar(app);
@@ -1360,12 +1426,7 @@ class WindowControls {
     }
   }
 
-  /**
-   * On the first render of a sheet class never seen before in this world, capture its
-   * actual rendered dimensions as the learned default size for that class.  Only GMs
-   * may write world settings.  Runs asynchronously after the next animation frame so
-   * the browser has finished laying out the window.
-   */
+  // On first render of a sheet type not seen before in this world, records its size as the learned default (GM only).
   static _maybeCaptureFirstRenderSize(app) {
     if (!WindowControls._isTargetSheet(app)) return;
     if (!game.user?.isGM) return;
@@ -1394,6 +1455,7 @@ class WindowControls {
     });
   }
 
+  // Shows a hidden-to-taskbar window, brings it to front, and removes its button if it is not pinned.
   static _restoreFromTaskbar(app) {
     WindowControls._showFromTaskbar(app);
     // If this was previously shown via hover-preview, ensure it cannot be re-hidden by preview cleanup.
@@ -1408,6 +1470,7 @@ class WindowControls {
     return p;
   }
 
+  // Updates or removes the taskbar button for a window to reflect its current pinned state.
   static _syncPinnedTaskbarButton(app) {
     if (!WindowControls._isTaskbarMode(WindowControls._getTaskbarSetting())) return;
     if (app._pinned === true) {
@@ -1423,12 +1486,17 @@ class WindowControls {
     }
   }
 
+  // ── Header Controls ───────────────────────────────────────────────────────────────
+  // Injecting and managing WCN's extra buttons (minimize, default size, maximize, pin) in window headers.
+
+  // Returns the <header> element of a window.
   static _getHeaderElement(app, rootElement) {
     const el = rootElement ?? WindowControls._getElement(app);
     if (!el) return null;
     return el.querySelector('.window-header') ?? el.querySelector('header') ?? null;
   }
 
+  // Returns the close button element inside a window's header.
   static _getCloseControlElement(app, rootElement) {
     // Prefer the AppV2 Window API if present.
     const closeEl = app?.window?.close;
@@ -1443,12 +1511,14 @@ class WindowControls {
     );
   }
 
+  // Shows or hides the close button in a window's header.
   static _setCloseControlHidden(app, hidden, rootElement) {
     const closeEl = WindowControls._getCloseControlElement(app, rootElement);
     if (!closeEl) return;
     closeEl.style.display = hidden ? 'none' : '';
   }
 
+  // Sets the text content of the window's title element (works for both AppV1 and AppV2).
   static _setWindowTitleText(app, text, rootElement) {
     const titleEl = app?.window?.title;
     if (titleEl instanceof HTMLElement) {
@@ -1461,6 +1531,7 @@ class WindowControls {
     if (h) h.textContent = text;
   }
 
+  // Injects WCN's header buttons (minimize, default size, maximize, pin) into an AppV2 window.
   static _ensureInlineControlsV2(app, rootElement) {
     if (WindowControls._isWcnDisabled()) return;
     if (WindowControls._shouldIgnoreApp(app)) return;
@@ -1560,10 +1631,10 @@ class WindowControls {
     }
   }
 
-  static getStashedKeys() {
-    return Object.keys(WindowControls.minimizedStash).map(w => parseInt(w));
-  }
+  // ── Window Lifecycle ─────────────────────────────────────────────────────────────
+  // Minimize, restore, close, and title-transformation for all managed windows.
 
+  // Minimizes all non-pinned, non-dialog open windows at once.
   static minimizeAll() {
     for (const w of Object.values(ui.windows)) {
       const ctr = w.constructor.name;
@@ -1580,34 +1651,22 @@ class WindowControls {
     }
   }
 
-  // Null-guard fixes contributed by Andersants (issue #7):
-  // Token Mold and some other modules can pass null/non-string values here,
-  // causing a console error on right-click. Coerce defensively before calling .replace().
-  static curateId(text) {
-    return (text || "").replace(/\W/g, '_');
-  }
-
+  // Adjusts a window title for compact taskbar display (strips token prefix, abbreviates table names).
   static curateTitle(title) {
     if (!title || typeof title !== 'string') return "";
     return title.replace("[Token] ", "~ ").replace("Table Configuration: ", "");
   }
 
+  // Reverses the title transformation applied by curateTitle.
   static uncurateTitle(title) {
     if (!title || typeof title !== 'string') return "";
     return title.replace("~ ", "[Token] ");
   }
 
-  static getCurrentMaxGap() {
-    const setting = game.settings.get(WindowControls.MODULE_ID, 'organizedMinimize');
-    const sidebarGap = WindowControls.cssMinimizedSize * (setting === 'persistentTop' || setting === 'persistentBottom' ? 3 : 4);
-    const boardSize = parseInt($("#board").css('width'));
-    return boardSize - sidebarGap;
-  }
+  // ── Pinning ────────────────────────────────────────────────────────────────
+  // Pinning keeps a window open and its close button hidden across sessions.
 
-  static getOverflowedState() {
-    return Math.max(...WindowControls.getStashedKeys()) >= WindowControls.getCurrentMaxGap();
-  }
-
+  // Saves a window's Document UUID to the user's flags so it reopens pinned next session.
   static async persistPinned(app) {
     const id = WindowControls._getAppPersistentId(app);
     if (!id) return;
@@ -1619,6 +1678,7 @@ class WindowControls {
     WindowControls._syncRememberedPinnedCache();
   }
 
+  // Removes a window from the user's remembered-pinned flags.
   static async unpersistPinned(app) {
     const id = WindowControls._getAppPersistentId(app);
     if (!id) return;
@@ -1628,6 +1688,7 @@ class WindowControls {
     WindowControls._syncRememberedPinnedCache();
   }
 
+  // Polls until a sheet is rendered, then applies pin state and hides it to the taskbar.
   static _persistRenderMinimizeRetry(app, { position, tries = 0 } = {}) {
     const maxTries = 10;
     const delay = 250;
@@ -1657,6 +1718,7 @@ class WindowControls {
     }, delay);
   }
 
+  // On world load, reopens all documents the user had pinned in their previous session.
   static async _restoreRememberedPinnedWindows() {
     if (!game.settings.get(WindowControls.MODULE_ID, 'rememberPinnedWindows')) return;
     WindowControls._syncRememberedPinnedCache();
@@ -1710,155 +1772,7 @@ class WindowControls {
     }
   }
 
-  static toggleMovement(app) {
-    const elementJS = WindowControls._getElement(app);
-    const stashOverflowed = WindowControls.getOverflowedState();
-    if (stashOverflowed) {
-      return;
-    }
-
-    if (!elementJS) return;
-
-    elementJS.addEventListener('pointerdown', function (ev) {
-      if (app._minimized)
-        ev.stopImmediatePropagation();
-    }, true)
-
-  }
-
-  static positionMinimizeBar() {
-    // Legacy minibar feature removed (taskbar-only minimize).
-    return;
-  }
-
-  static getTopPosition() {
-    const minimizedSetting = game.settings.get(WindowControls.MODULE_ID, 'organizedMinimize');
-    if (['bottomBar', 'bottom'].includes(minimizedSetting)) {
-      let hotbarSetting;
-      if (game.modules.get('minimal-ui')?.active)
-        hotbarSetting = game.settings.get('minimal-ui', 'hotbar');
-      let availableHeight = $("#board").height();
-      if (hotbarSetting && (hotbarSetting === 'hidden' || (hotbarSetting === 'onlygm' && !game.user?.isGM)))
-        return availableHeight - WindowControls.cssMinimizedBottomBaseline + 65 - 41;
-      else
-        return availableHeight - WindowControls.cssMinimizedBottomBaseline - 41;
-    } else {
-      let sceneNavigationSetting;
-      let logoSetting;
-      if (game.modules.get('minimal-ui')?.active) {
-        sceneNavigationSetting = game.settings.get('minimal-ui', 'sceneNavigation');
-        logoSetting = game.settings.get('minimal-ui', 'foundryLogoSize');
-      }
-      let offset;
-      if (logoSetting === 'hidden' && sceneNavigationSetting === 'hidden')
-        offset = WindowControls.cssMinimizedTopBaseline + 6;
-      else {
-        const navigation = (
-          document.querySelector('#navigation') ||
-          document.querySelector('#scene-navigation') ||
-          document.querySelector('#ui-top') ||
-          ui?.navigation?.element?.[0] ||
-          ui?.nav?.element?.[0]
-        );
-        const navHeight = navigation?.offsetHeight;
-        offset = (typeof navHeight === 'number' && navHeight > 0)
-          ? navHeight + WindowControls.cssMinimizedTopBaseline + 20
-          : WindowControls.cssMinimizedTopBaseline + 6;
-      }
-      return offset;
-    }
-  }
-
-  static getLeftPosition(app) {
-    const appKey = WindowControls._getAppKey(app);
-    const minimizedSetting = game.settings.get(WindowControls.MODULE_ID, 'organizedMinimize');
-    const minGap = ['top', 'topBar'].includes(minimizedSetting) ? WindowControls.cssTopBarLeftStart + 10 : (minimizedSetting === 'persistentTop' || minimizedSetting === 'persistentBottom' ? WindowControls.cssTopBarPersistentLeftStart + 10 : WindowControls.cssBottomBarLeftStart + 10);
-    const jumpGap = WindowControls.cssMinimizedSize + 10;
-    const maxGap = WindowControls.getCurrentMaxGap();
-    let targetPos;
-    for (let i = minGap; i < maxGap + jumpGap; i = i + jumpGap) {
-      const stashEntry = WindowControls.minimizedStash[i];
-      if (appKey && stashEntry?.appKey === appKey) {
-        stashEntry.oldPosition = Object.assign({}, app.position);
-        targetPos = i;
-        return targetPos;
-      } else if (!targetPos && !stashEntry?.app?.rendered) {
-        WindowControls.minimizedStash[i] = {app: app, appKey, oldPosition: Object.assign({}, app.position)};
-        targetPos = i;
-        return targetPos;
-      }
-    }
-    let appI = app?.position?.left ?? minGap;
-    while (appI in WindowControls.minimizedStash) appI += 20;
-    WindowControls.minimizedStash[appI] = {app: app, appKey, oldPosition: Object.assign({}, app.position)};
-    return appI;
-  }
-
-  static setMinimizedPosition(app) {
-    const setting = game.settings.get(WindowControls.MODULE_ID, 'organizedMinimize');
-    const alreadyStashedWindow = WindowControls.appInStash(WindowControls._getAppKey(app));
-    if (!alreadyStashedWindow && WindowControls.getOverflowedState()) return;
-    const leftPos = WindowControls.getLeftPosition(app);
-    const topPos = WindowControls.getTopPosition();
-    app.setPosition({
-      left: leftPos ?? app.position.left,
-      top: setting === 'persistentTop' ? WindowControls.getTaskbarTop() : setting === 'persistentBottom' ? WindowControls.getTaskbarBot() : (topPos ?? app.position.top),
-      width: WindowControls.cssMinimizedSize
-    });
-
-    // Foundry's minimized state often anchors windows via "bottom" CSS.
-    // Clear the opposing axis so our setPosition top/bottom intent actually applies.
-    const el = WindowControls._getElement(app);
-    if (el) {
-      if (['top', 'topBar', 'persistentTop'].includes(setting)) el.style.bottom = '';
-      if (['bottom', 'bottomBar', 'persistentBottom'].includes(setting)) el.style.top = '';
-    }
-
-    const z = WindowControls.getOverflowedState() ? 10 : 1;
-    const $el = WindowControls._get$Element(app);
-    if ($el) $el.css({'z-index': z});
-    else {
-      if (el) el.style.zIndex = String(z);
-    }
-  }
-
-  static setRestoredPosition(app) {
-    app.setPosition(WindowControls.appInStash(WindowControls._getAppKey(app))?.oldPosition ?? app.position);
-  }
-
-  static deleteFromStash(app, keys) {
-    const appKey = WindowControls._getAppKey(app);
-    let lastDeleted;
-    keys.forEach(i => {
-      const stash = WindowControls.minimizedStash[i];
-      if (stash?.app && appKey && stash.appKey === appKey) {
-        lastDeleted = i;
-        delete WindowControls.minimizedStash[i];
-      } else if (stash && lastDeleted) {
-        WindowControls.minimizedStash[lastDeleted] = stash;
-        if (WindowControls._isMinimized(stash.app))
-          stash.app.setPosition({left: lastDeleted});
-        lastDeleted = i;
-        delete WindowControls.minimizedStash[i];
-      }
-    });
-  }
-
-  static appInStash(targetId) {
-    if (!targetId) return undefined;
-    return Object.values(WindowControls.minimizedStash).find(a => a?.appKey === targetId)
-  }
-
-  static refreshMinimizeBar() {
-    // Legacy minibar feature removed (taskbar-only minimize).
-    return;
-  }
-
-  static cleanupMinimizeBar(app) {
-    // Legacy minibar feature removed (taskbar-only minimize).
-    return;
-  }
-
+  // Updates the window's header icon to show a restore symbol and trims the title when hidden to taskbar.
   static setMinimizedStyle(app) {
     const el = WindowControls._getElement(app);
     if (!el) return;
@@ -1870,6 +1784,7 @@ class WindowControls {
     $min.show();
   }
 
+  // Restores the window's header icon and title to their normal state after being brought back from the taskbar.
   static setRestoredStyle(app) {
     const el = WindowControls._getElement(app);
     if (!el) return;
@@ -1885,6 +1800,7 @@ class WindowControls {
     }
   }
 
+  // Applies pinned styling to a window: locks the close button and persists the pin to user flags.
   static _applyPinnedState(app, el, header) {
     if (!header.hasClass('minimized-pinned')) header.addClass('minimized-pinned');
     app._pinned = true;
@@ -1917,6 +1833,7 @@ class WindowControls {
     WindowControls._syncPinnedTaskbarButton(app);
   }
 
+  // Removes pinned styling: restores the close button and removes the pin from user flags.
   static _removePinnedState(app, el, header) {
     if (header.hasClass('minimized-pinned')) header.removeClass('minimized-pinned');
     delete app._pinned;
@@ -1927,7 +1844,7 @@ class WindowControls {
     }
 
     // Dirty hack to prevent very fast minimization (messes up windows size)
-    var _bkpMinimize = app.minimize;
+    const _bkpMinimize = app.minimize;
     app.minimize = function () {};
     setTimeout(() => {
       app.minimize = _bkpMinimize;
@@ -1940,6 +1857,7 @@ class WindowControls {
     WindowControls._syncPinnedTaskbarButton(app);
   }
 
+  // Toggles, sets, or removes pin state on a window. Pass { mode: 'pin' | 'unpin' } to force a direction.
   static applyPinnedMode(app, { mode = 'toggle' } = {}) {
     if (!WindowControls._isTargetSheet(app)) return;
     const el = WindowControls._getElement(app);
@@ -1972,12 +1890,14 @@ class WindowControls {
     else WindowControls._removePinnedState(app, el, header);
   }
 
+  // Returns true if WCN should always skip this app entirely (incompatible apps or non-target sheets).
   static _shouldIgnoreApp(app) {
     if (!app) return true;
     if (!WindowControls._isTargetSheet(app)) return true;
     return app.id === 'tokenizer-control' || app.constructor?.name === 'QuestTracker' || app.constructor?.name === 'ee';
   }
 
+  // Adds WCN's header buttons (minimize, default size, maximize, pin) into an AppV1 window's button list.
   static _injectHeaderControlsV1(app, buttons) {
     if (WindowControls._isWcnDisabled()) return;
     if (WindowControls._shouldIgnoreApp(app)) return;
@@ -2057,17 +1977,7 @@ class WindowControls {
     if (close) buttons.push(close);
   }
 
-  static _injectHeaderControlsV2(app, controls) {
-    // Intentionally do not add these controls to the AppV2 hamburger menu.
-    // We render inline window buttons (left of close) in the `renderApplicationV2` hook.
-    return;
-  }
-
-  static async renderDummyPanelApp(app) {
-    // Legacy persistent dummy windows removed (taskbar-only minimize).
-    return;
-  }
-
+  // Hides a window to the taskbar: updates its appearance and creates its taskbar button.
   static organizedMinimize(app, settings) {
     if (!WindowControls._isTaskbarMode(settings)) return;
     if (WindowControls._shouldIgnoreApp(app)) return;
@@ -2077,6 +1987,7 @@ class WindowControls {
     WindowControls._hideToTaskbar(app);
   }
 
+  // Shows a taskbar-hidden window: updates its appearance and removes or keeps its taskbar button.
   static organizedRestore(app, settings) {
     if (!WindowControls._isTaskbarMode(settings)) return;
     if (WindowControls._shouldIgnoreApp(app)) return;
@@ -2090,12 +2001,16 @@ class WindowControls {
     }
   }
 
+  // Cleans up the taskbar button and unhides the window element when a window is closed.
   static organizedClose(app, settings) {
     if (!WindowControls._isTaskbarMode(settings)) return;
     WindowControls._removeTaskbarButton(app);
     WindowControls._showFromTaskbar(app);
   }
 
+  // ── Settings Registration ──────────────────────────────────────────────────────
+
+  // Registers all WCN settings with Foundry's settings system. Called once on init.
   static initSettings() {
     game.settings.register(WindowControls.MODULE_ID, 'wcDisabled', {
       name: game.i18n.localize("WindowControls.WcDisabledName"),
@@ -2313,6 +2228,10 @@ class WindowControls {
 
   }
 
+  // ── Hooks & Initialization ─────────────────────────────────────────────────────
+
+  // Sets up all Foundry hooks and prototype method patches that drive WCN's behaviour.
+  // This is the central wiring point for the module's features.
   static initHooks() {
 
     // Patch Application.prototype._getHeaderButtons at the prototype level so WCN
@@ -2342,10 +2261,6 @@ class WindowControls {
     // is not a problem — it checks for existing buttons by class name.
     Hooks.on('getApplicationV1HeaderButtons', (app, buttons) => {
       WindowControls._injectHeaderControlsV1(app, buttons);
-    });
-
-    Hooks.on('getHeaderControlsApplicationV2', (app, controls) => {
-      WindowControls._injectHeaderControlsV2(app, controls);
     });
 
     Hooks.on('renderApplicationV2', (app, element) => {
@@ -2646,6 +2561,10 @@ class WindowControls {
 
   }
 
+  // ── Visual Appearance ───────────────────────────────────────────────────────────
+  // CSS variable setters for taskbar and pinned-header colors, sidebar width, and taskbar width.
+
+  // Sets the taskbar background color CSS variable to the given hex color.
   static _setTaskbarColor(value) {
     if (typeof value !== 'string') return;
     const rootStyle = document.documentElement?.style;
@@ -2658,6 +2577,7 @@ class WindowControls {
     if (bar) bar.style.removeProperty('background-color');
   }
 
+  // Sets the taskbar scrollbar thumb color CSS variable.
   static _setTaskbarScrollbarColor(value) {
     if (typeof value !== 'string') return;
     const v = value.trim();
@@ -2675,6 +2595,7 @@ class WindowControls {
     if (bar) bar.style.setProperty('--wc-taskbar-scrollbar-color', v);
   }
 
+  // Parses a hex color string (#RGB, #RGBA, #RRGGBB, or #RRGGBBAA) into {r, g, b} components (0–255).
   static _parseHexColor(value) {
     if (typeof value !== 'string') return null;
     const v = value.trim();
@@ -2703,6 +2624,7 @@ class WindowControls {
     return null;
   }
 
+  // Derives and applies the header-highlight and pinned-button colors from the chosen pin color.
   static _setPinnedHeaderColor(value) {
     // User chooses base color; pinned header is always 25% alpha.
     // Taskbar pinned buttons are 20% darker and fully opaque.
@@ -2722,6 +2644,7 @@ class WindowControls {
     }
   }
 
+  // Reads the pinnedHeaderColor setting and applies it (called once at startup).
   static _applyPinnedHeaderColorFromSetting() {
     try {
       const value = game?.settings?.get(WindowControls.MODULE_ID, 'pinnedHeaderColor');
@@ -2731,6 +2654,7 @@ class WindowControls {
     }
   }
 
+  // Reads the taskbarColor setting and applies it (called once at startup).
   static _applyTaskbarColorFromSetting() {
     try {
       const value = game?.settings?.get(WindowControls.MODULE_ID, 'taskbarColor');
@@ -2740,6 +2664,7 @@ class WindowControls {
     }
   }
 
+  // Reads the taskbarScrollbarColor setting and applies it (called once at startup).
   static _applyTaskbarScrollbarColorFromSetting() {
     try {
       const value = game?.settings?.get(WindowControls.MODULE_ID, 'taskbarScrollbarColor');
@@ -2749,6 +2674,7 @@ class WindowControls {
     }
   }
 
+  // Measures the sidebar element width and updates the --wc-sidebar-width CSS variable.
   static _updateSidebarWidthVariable() {
     // Measure from #sidebar's left edge so the taskbar extends behind #ui-right-column-1
     // (the chat/notifications column). That column is nudged away from the bar via CSS.
@@ -2759,6 +2685,7 @@ class WindowControls {
     document.documentElement.style.setProperty('--wc-sidebar-width', `${width}px`);
   }
 
+  // Sets up a ResizeObserver that keeps the --wc-sidebar-width variable current when the sidebar resizes.
   static _applySidebarWidthObserver() {
     // Tear down any previous observer.
     if (WindowControls._sidebarResizeObserver) {
@@ -2781,6 +2708,7 @@ class WindowControls {
     }
   }
 
+  // Applies the canvas-only or full-width taskbar body class based on the current setting.
   static _applyTaskbarWidthFromSetting() {
     const canvasOnly = game?.settings?.get(WindowControls.MODULE_ID, 'taskbarWidth') === 'canvasOnly';
     document.body.classList.toggle('wc-taskbar-canvas-only', canvasOnly);
@@ -2795,11 +2723,10 @@ class WindowControls {
     }
   }
 
-  /**
-   * Open the "Learned Sheet Defaults" management dialog (GM only).
-   * Shows a table of captured class-name → width×height pairs with per-row Edit
-   * and a Clear All footer action.
-   */
+  // ── Settings UI ───────────────────────────────────────────────────────────────
+  // Dialogs and enhancements used within Foundry's Settings panel.
+
+  // Opens the GM-only dialog for viewing, editing, or clearing captured sheet default sizes.
   static async _showSheetDefaultsDialog() {
     const DialogV2 = foundry?.applications?.api?.DialogV2;
     if (!DialogV2) {
@@ -2870,10 +2797,7 @@ class WindowControls {
     });
   }
 
-  /**
-   * Open an inline edit dialog for a single captured sheet default.
-   * @param {string} sheetName  Constructor name of the sheet class to edit.
-   */
+  // Opens a small dialog to edit one specific sheet type's captured default width and height.
   static async _showEditSheetDefaultDialog(sheetName) {
     const DialogV2 = foundry?.applications?.api?.DialogV2;
     if (!DialogV2) return;
@@ -2925,6 +2849,7 @@ class WindowControls {
     await game.settings.set(WindowControls.MODULE_ID, 'learnedSheetDefaults', { ...cur, [sheetName]: { width: w, height: h } });
   }
 
+  // Reorganizes the WCN section in the Foundry Settings UI into Taskbar and Pinning groups with headers.
   static _organizeSettingsConfig(html) {
     if (!html) return;
 
@@ -3015,6 +2940,7 @@ class WindowControls {
     }
   }
 
+  // Adds a color-swatch picker widget next to a hex text input in the settings panel.
   static _enhanceColorPickerSetting($html, key) {
     const $text = $html.find(`[name="${WindowControls.MODULE_ID}.${key}"]`);
     if (!$text?.length) return;
@@ -3066,11 +2992,6 @@ class WindowControls {
   }
 
 }
-
-Hooks.once('setup', () => {
-  // Legacy persistent taskbar layout adjustments removed.
-  // Taskbar is now a standalone section with taskbar buttons; windows remain in their normal layer.
-})
 
 Hooks.once('init', () => {
   // Expose the class so other modules can call WindowControls.registerApp()

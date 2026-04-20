@@ -1,8 +1,5 @@
+/* ── CSS Variables ───────────────────────────────────────────────────────── */
 :root {
-    --minibarw: unset;
-    --minibarbot: unset;
-    --minibartop: unset;
-    --minibarleft: unset;
     --wcbordercolor: unset;
     --wcshadowcolor: unset;
     --wcshadowstrength: unset;
@@ -19,21 +16,7 @@
     --wc-pinned-taskbar-btn-bg: rgb(204, 109, 0);
 }
 
-#minimized-bar {
-    position: absolute;
-    width: var(--minibarw);
-    height: 38px;
-    bottom: var(--minibarbot);
-    top: var(--minibartop);
-    border-radius: 5px;
-    left: var(--minibarleft);
-    opacity: 75%;
-    border: 1px solid var(--wcbordercolor);
-    box-shadow: 0 0 var(--wcshadowstrength) 0 var(--wcshadowcolor);
-    z-index: 0;
-    transition: 0.25s ease-out 0.25s;
-}
-
+/* ── Taskbar Bar ──────────────────────────────────────────────────────────── */
 #window-controls-persistent {
     position: fixed;
     left: 0;
@@ -118,6 +101,7 @@
     border-radius: 999px;
 }
 
+/* ── Taskbar Layout (top / bottom positioning) ───────────────────────────── */
 body.wc-taskbar-top #window-controls-persistent {
     top: 0 !important;
     bottom: auto !important;
@@ -160,17 +144,12 @@ body.wc-taskbar-bottom #interface {
 
 /* Fallback for any Foundry variants where #board is not inside #interface. */
 body.wc-taskbar-top #board {
-    /*top: var(--wc-taskbar-height) !important;*/
     bottom: auto !important;
-    /*height: calc(100vh - var(--wc-taskbar-height)) !important;*/
-    /*max-height: calc(100vh - var(--wc-taskbar-height)) !important;*/
 }
 
 body.wc-taskbar-bottom #board {
     top: 0 !important;
     bottom: auto !important;
-    /*height: calc(100vh - var(--wc-taskbar-height)) !important;*/
-    /*max-height: calc(100vh - var(--wc-taskbar-height)) !important;*/
 }
 
 /* Keep sidebar height consistent with the reduced usable viewport. */
@@ -195,12 +174,6 @@ body.wc-taskbar-canvas-only #ui-right {
     height: 100vh !important;
 }
 
-/* Top taskbar: #ui-right starts below the bar so the sidebar clears it. */
-body.wc-taskbar-top.wc-taskbar-canvas-only #ui-right {
-    /*top: var(--wc-taskbar-height) !important;*/
-    /*height: calc(100vh - var(--wc-taskbar-height)) !important;*/
-}
-
 /* Bottom taskbar: #ui-right from top of viewport, full height. */
 body.wc-taskbar-bottom.wc-taskbar-canvas-only #ui-right {
     top: 0 !important;
@@ -223,6 +196,7 @@ body.wc-taskbar-canvas-only {
     --minisidebaradj: calc(100vh - 10px);
 }
 
+/* ── Taskbar Buttons ─────────────────────────────────────────────────────── */
 #window-controls-persistent .wc-taskbar-btn {
     --button-size: 24px;
     display: inline-flex;
@@ -243,7 +217,8 @@ body.wc-taskbar-canvas-only {
     white-space: nowrap;
 }
 
-/* Settings: compact square color swatch next to the hex field */
+/* ── Settings UI ─────────────────────────────────────────────────────────── */
+/* Compact square color swatch rendered next to hex text fields. */
 input[type="color"].wc-color-picker {
     -webkit-appearance: none;
     appearance: none;
@@ -278,6 +253,7 @@ input[type="color"].wc-color-picker::-moz-color-swatch {
     border-radius: 2px;
 }
 
+/* ── Sidebar / Misc ──────────────────────────────────────────────────────── */
 #sidebar {
     height: var(--minisidebaradj);
 }
@@ -296,6 +272,7 @@ input[type="color"].wc-color-picker::-moz-color-swatch {
     box-shadow: 0 0 var(--wcshadowstrength) 0 var(--wcshadowcolor);
 }
 
+/* ── Header Controls (inline window buttons) ────────────────────────────── */
 .window-controls-inline {
     display: inline-flex !important;
     flex-direction: row !important;
@@ -319,17 +296,10 @@ input[type="color"].wc-color-picker::-moz-color-swatch {
     margin: 0 0 0 2px;
 }
 
+/* ── Pinning ─────────────────────────────────────────────────────────────── */
 .minimized-pinned {
     background-color: var(--wc-pinned-header-bg);
     border-radius: 5px 5px 0 0;
-}
-
-.hidden-placeholder h4:hover {
-    text-shadow: 0 1px darkred;
-}
-
-.hidden-placeholder {
-    visibility: hidden;
 }
 
 /* ── Taskbar button right-click context menu ─────────────────────────────── */
