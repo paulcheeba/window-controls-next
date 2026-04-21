@@ -208,6 +208,13 @@ body.wc-taskbar-canvas-only {
 
 #window-controls-persistent .wc-taskbar-btn.pinned {
     background-color: var(--wc-pinned-taskbar-btn-bg);
+    -webkit-text-stroke: 1px #000;
+    color: white;
+    paint-order: stroke fill;
+    font-weight: 500;
+    text-shadow: 0 0 10px #000000;
+    font-family: 'Modesto Condensed';
+    font-size: 1.3rem;
 }
 
 #window-controls-persistent .wc-taskbar-btn .wc-taskbar-label {
