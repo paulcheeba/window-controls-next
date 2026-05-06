@@ -1,0 +1,112 @@
+/* ══════════════════════════════════════════════════════════════════════════════
+   Window Controls Next — Preset Themes
+   ──────────────────────────────────────────────────────────────────────────────
+   Each theme block is identified by a magic comment parsed by JS at ready-time:
+     /* WCN-THEME id="<id>" name="<Display Name>" *\/
+   
+   Themes use  body.wc-theme-<id>  selectors to override the :root variables
+   declared in windowcontrols.css.  Only override variables that differ from
+   the defaults — every variable has a sensible fallback in :root.
+
+   To add a new preset theme:
+     1. Duplicate one of the theme blocks below.
+     2. Assign a unique id (e.g. "theme4") and a display name.
+     3. Update the body class to match: body.wc-theme-theme4 { ... }
+     4. Adjust the variable values as desired.
+══════════════════════════════════════════════════════════════════════════════ */
+
+
+/* ── Theme 1: Original (v14.0.0.0) ──────────────────────────────────────────
+   The appearance prior to v14.0.2.0.  Pinned buttons show the orange
+   background colour but use plain (unstyled) text — no custom font, no glow.
+*/
+/* WCN-THEME id="theme1" name="Original (v14.0.0.0)" */
+body.wc-theme-theme1 {
+    /* Pinned window header tint */
+    --wc-pinned-header-bg: #ff880040;
+
+    /* Pinned taskbar button background */
+    --wc-pinned-taskbar-btn-bg: #cc6
+
+    /* All taskbar buttons: no custom text styling */
+    --wc-btn-fon
+    --wc-btn-font-size: inherit;
+    --wc-btn-font-weight: inherit;
+    --wc-btn-color: inherit;
+    --wc-btn-text-stroke: 0;
+    --wc-btn-text-shadow: none;
+
+    /* Pinned taskbar button text: plain (no font, no glow) */
+    --wc-btn-pinned-font-family: inherit;
+    --wc-btn-pinned-font-size: inherit;
+    --wc-btn-pinned-color: inherit;
+    --wc-btn-pinned-text-stroke: 0;
+    --wc-btn-pinned-text-shadow: none;
+
+    /* Header inject buttons: no custom styling */
+    --wc-header-btn-color: inherit;
+    --wc-header-btn-bg: transparent;
+    --wc-header-btn-pinned-color: inherit;
+}
+
+
+/* ── Theme 2: Dark Gold (v14.0.2.0) ─────────────────────────────────────────
+   Adds Modesto Condensed font, white text with a black outline and glow on
+   pinned taskbar buttons.  The pin header button glows orange when active.
+*/
+/* WCN-THEME id="theme2" name="Dark Gold (v14.0.2.0)" */
+body.wc-theme-theme2 {
+    /* Pinned window header tint */
+    --wc-pinned-header-bg: #ff880040;
+
+    /* Pinned taskbar button background */
+    --wc-pinned-taskbar-btn-bg: #cc6d00;
+
+    /* All taskbar buttons: no custom text styling */
+    --wc-btn-font-family: inherit;
+    --wc-btn-font-size: inherit;
+    --wc-btn-font-weight: inherit;
+    --wc-btn-color: inherit;
+    --wc-btn-text-stroke: 0;
+    --wc-btn-text-shadow: none;
+
+    /* Pinned taskbar button text: Modesto Condensed with black outline + glow */
+    --wc-btn-pinned-font-family: 'Modesto Condensed';
+    --wc-btn-pinned-font-size: 1.3rem;
+    --wc-btn-pinned-color: #ffffff;
+    --wc-btn-pinned-text-stroke: 1px #000000;
+    --wc-btn-pinned-text-shadow: 0 0 10px #000000;
+
+    /* Header inject buttons: orange accent on active pin */
+    --wc-header-btn-color: inherit;
+    --wc-header-btn-bg: transparent;
+    --wc-header-btn-pinned-color: #ff8800;
+}
+
+
+/* ── Theme 3: Placeholder ────────────────────────────────────────────────────
+   Ready to customise — a copy of Dark Gold with a different identity.
+   Rename it and tweak the variables to create a new look.
+*/
+/* WCN-THEME id="theme3" name="Placeholder" */
+body.wc-theme-theme3 {
+    --wc-pinned-header-bg: #ff880040;
+    --wc-pinned-taskbar-btn-bg: #cc6d00;
+
+    --wc-btn-font-family: inherit;
+    --wc-btn-font-size: inherit;
+    --wc-btn-font-weight: inherit;
+    --wc-btn-color: inherit;
+    --wc-btn-text-stroke: 0;
+    --wc-btn-text-shadow: none;
+
+    --wc-btn-pinned-font-family: 'Modesto Condensed';
+    --wc-btn-pinned-font-size: 1.3rem;
+    --wc-btn-pinned-color: #ffffff;
+    --wc-btn-pinned-text-stroke: 1px #000000;
+    --wc-btn-pinned-text-shadow: 0 0 10px #000000;
+
+    --wc-header-btn-color: inherit;
+    --wc-header-btn-bg: transparent;
+    --wc-header-btn-pinned-color: #ff8800;
+}

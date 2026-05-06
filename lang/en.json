@@ -25,6 +25,11 @@
 
   "WindowControls.PinnedButtonName": "Pinned Button",
   "WindowControls.PinnedButtonHint": "Add a pin button on windows. If clicked, such windows may not be closed, only minimized. (Client)",
+  "WindowControls.ButtonSizeName": "Button Size",
+  "WindowControls.ButtonSizeHint": "Set the size used for header controls and taskbar buttons. (Client)",
+  "WindowControls.ButtonSizeSmall": "Small (18px)",
+  "WindowControls.ButtonSizeMedium": "Medium (20px)",
+  "WindowControls.ButtonSizeLarge": "Large (24px)",
   "WindowControls.PinnedHeaderColorName": "Pinned Header Color",
   "WindowControls.PinnedHeaderColorHint": "Base color for pinned window headers (forced to 25% opacity). Pinned taskbar buttons use a 20% darker solid color. (Client)",
   "WindowControls.PinnedDoubleTappingName": "Double 'ESC' Tapping to minimize Pinned Windows",
@@ -66,5 +71,8 @@
   "WindowControls.ContextMaximize": "Maximize",
   "WindowControls.ContextPin": "Pin",
   "WindowControls.ContextUnpin": "Unpin",
-  "WindowControls.ContextClose": "Close"
+  "WindowControls.ContextClose": "Close",
+
+  "WindowControls.ThemeEnabledName": "Enable Theming",
+  "WindowControls.ThemeEnabledHint": "Apply the active Window Controls theme. Disable to use default Foundry styling."
 }

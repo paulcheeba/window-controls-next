@@ -33,6 +33,22 @@ The first time any sheet type opens in a world, WCN automatically captures its r
 ### Taskbar Right-Click Context Menu
 Right-clicking any taskbar button opens a context menu with: Restore, Maximize, Default Size, Pin/Unpin, and Close.
 
+### Theme Manager
+
+The Theme Manager (accessible from Module Settings) lets you customize the visual appearance of the taskbar and pinned window headers, including colors, fonts, background patterns, and more. You can save any combination of settings as a named **custom theme** and switch between themes at any time.
+
+- **Apply & Close** applies your current edits immediately, even if you have not saved a custom theme yet.
+- Applied-but-unsaved edits are stored as a temporary **Unsaved Theme** draft so you can switch to another theme and back without losing your in-progress work.
+- If you Save Custom using a name that already exists, WCN prompts to overwrite instead of creating a duplicate.
+
+**Custom themes are stored locally in your browser.** They are not synced to the Foundry server, so they only exist in the browser where they were created. If you log in from a different browser or computer, your custom themes will not be there by default.
+
+To move themes between browsers:
+- **Export** — opens a checklist of your custom themes and saves the selected ones as a `wcn-themes.json` file to your computer.
+- **Import** — opens a file picker; select a previously exported `.json` file to merge those themes into your current browser.
+
+**Sharing themes with players:** A GM can design a theme in their own browser, export it, and share the `.json` file with players. Each player imports it on their own machine and can apply it independently. Because custom themes are client-scoped, each player can keep or discard a shared theme without affecting anyone else.
+
 ### Canvas-Only Taskbar Width
 An optional setting stops the taskbar at the sidebar's left edge so it never overlaps the chat or notifications column. The boundary tracks sidebar resize and collapse automatically.
 
@@ -60,8 +76,10 @@ Settings are scoped so each user can control their own experience without affect
 | Disable Window Controls | **Client** | Completely disables all WCN features for this user only. |
 | Taskbar Location | **Client** | Top taskbar, bottom taskbar, or disabled. |
 | Taskbar Width | **Client** | Full width or canvas-only (stops at the sidebar edge). |
+| Button Size | **Client** | Sets header/taskbar control size (Small 18px, Medium 20px, Large 24px). |
 | Taskbar Color | **Client** | Background color of the taskbar. |
 | Taskbar Scrollbar Color | **Client** | Color of the taskbar's horizontal scrollbar thumb. |
+| Enable Theming | **Client** | Enables/disables WCN theme variable application for this user. |
 | Minimize Button | **Client** | Show or hide the minimize header button. |
 | Default Size Button | **Client** | Show or hide the default size header button. |
 | Maximize Button | **Client** | Show or hide the maximize header button. |

@@ -52,6 +52,39 @@ class WindowControls {
   static _shownAppV1Warning = false;
   static _sidebarResizeObserver = null;
 
+  // Session-only marker used by Theme Manager to remind users that current edits
+  // were applied without being saved as a named custom theme.
+  static _themeUnsavedPending = false;
+  static _themeUnsavedBaseId = null;
+  static _UNSAVED_THEME_ID = '__wcn_unsaved__';
+  static _UNSAVED_THEME_NAME = 'Unsaved Theme';
+
+  // Parsed preset themes from themes.css (populated by _loadThemesFromCSS at ready).
+  static _wcnThemes = [];
+
+  // All CSS variable names that belong to the WCN theme system.
+  // Used by _applyTheme to clear inline vars when switching to a preset theme.
+  static _WCN_THEME_VARS = [
+    '--wc-pinned-header-bg',
+    '--wc-pinned-taskbar-btn-bg',
+    '--wc-btn-bg',
+    '--wc-btn-font-family',
+    '--wc-btn-font-size',
+    '--wc-btn-font-weight',
+    '--wc-btn-color',
+    '--wc-btn-text-stroke',
+    '--wc-btn-text-shadow',
+    '--wc-btn-pinned-font-family',
+    '--wc-btn-pinned-font-size',
+    '--wc-btn-pinned-font-weight',
+    '--wc-btn-pinned-color',
+    '--wc-btn-pinned-text-stroke',
+    '--wc-btn-pinned-text-shadow',
+    '--wc-header-btn-color',
+    '--wc-header-btn-bg',
+    '--wc-header-btn-pinned-color',
+  ];
+
   // ── Logging & Debug ───────────────────────────────────────────────────────
 
   // Prints to the browser console regardless of whether debug mode is enabled.
@@ -2087,6 +2120,24 @@ class WindowControls {
       default: "enabled",
       onChange: WindowControls.debouncedReload
     });
+    // To add or change dropdown sizes, update these labels and _setButtonSize below.
+    // Values map to a fixed px size so existing user selections remain stable.
+    game.settings.register(WindowControls.MODULE_ID, 'buttonSize', {
+      name: game.i18n.localize('WindowControls.ButtonSizeName'),
+      hint: game.i18n.localize('WindowControls.ButtonSizeHint'),
+      scope: 'client',
+      config: true,
+      type: String,
+      choices: {
+        small: game.i18n.localize('WindowControls.ButtonSizeSmall'),
+        medium: game.i18n.localize('WindowControls.ButtonSizeMedium'),
+        large: game.i18n.localize('WindowControls.ButtonSizeLarge')
+      },
+      default: 'large',
+      onChange: () => {
+        WindowControls._applyButtonSizeFromSetting();
+      }
+    });
     game.settings.register(WindowControls.MODULE_ID, 'clickOutsideMinimize', {
       name: game.i18n.localize("WindowControls.ClickOutsideMinimizeName"),
       hint: game.i18n.localize("WindowControls.ClickOutsideMinimizeHint"),
@@ -2121,7 +2172,7 @@ class WindowControls {
       name: game.i18n.localize("WindowControls.PinnedHeaderColorName"),
       hint: game.i18n.localize("WindowControls.PinnedHeaderColorHint"),
       scope: 'client',
-      config: true,
+      config: false,
       type: String,
       default: "#ff8800",
       onChange: (newValue) => {
@@ -2132,7 +2183,7 @@ class WindowControls {
       name: game.i18n.localize("WindowControls.TaskbarColorName"),
       hint: game.i18n.localize("WindowControls.TaskbarColorHint"),
       scope: 'client',
-      config: true,
+      config: false,
       type: String,
       default: "#0000",
       onChange: (newValue) => {
@@ -2144,12 +2195,29 @@ class WindowControls {
       name: game.i18n.localize("WindowControls.TaskbarScrollbarColorName"),
       hint: game.i18n.localize("WindowControls.TaskbarScrollbarColorHint"),
       scope: 'client',
-      config: true,
+      config: false,
       type: String,
       default: "",
       onChange: (newValue) => {
         WindowControls._setTaskbarScrollbarColor(newValue);
       }
+    });
+
+    game.settings.register(WindowControls.MODULE_ID, 'taskbarPattern', {
+      scope: 'client', config: false, type: String, default: 'diagonal',
+      onChange: () => WindowControls._applyTaskbarPatternFromSettings()
+    });
+    game.settings.register(WindowControls.MODULE_ID, 'taskbarPatternColor', {
+      scope: 'client', config: false, type: String, default: '#000000',
+      onChange: () => WindowControls._applyTaskbarPatternFromSettings()
+    });
+    game.settings.register(WindowControls.MODULE_ID, 'taskbarPatternOpacity', {
+      scope: 'client', config: false, type: Number, default: 80,
+      onChange: () => WindowControls._applyTaskbarPatternFromSettings()
+    });
+    game.settings.register(WindowControls.MODULE_ID, 'taskbarPatternSize', {
+      scope: 'client', config: false, type: Number, default: 4,
+      onChange: () => WindowControls._applyTaskbarPatternFromSettings()
     });
 
     game.settings.register(WindowControls.MODULE_ID, 'taskbarWidth', {
@@ -2215,6 +2283,43 @@ class WindowControls {
       config: true,
       type: Boolean,
       default: false
+    });
+
+    // Theme system settings.
+    game.settings.register(WindowControls.MODULE_ID, 'wcThemeEnabled', {
+      name: game.i18n.localize('WindowControls.ThemeEnabledName'),
+      hint: game.i18n.localize('WindowControls.ThemeEnabledHint'),
+      scope: 'client',
+      config: true,
+      type: Boolean,
+      default: true,
+      onChange: () => {
+        WindowControls._applyThemeFromSetting();
+      }
+    });
+    game.settings.register(WindowControls.MODULE_ID, 'wcThemeMode', {
+      scope: 'world',
+      config: false,
+      type: String,
+      default: 'gm'
+    });
+    game.settings.register(WindowControls.MODULE_ID, 'wcWorldTheme', {
+      scope: 'world',
+      config: false,
+      type: String,
+      default: 'theme2'
+    });
+    game.settings.register(WindowControls.MODULE_ID, 'activeTheme', {
+      scope: 'client',
+      config: false,
+      type: String,
+      default: 'theme2'
+    });
+    game.settings.register(WindowControls.MODULE_ID, 'wcCustomThemes', {
+      scope: 'client',
+      config: false,
+      type: Object,
+      default: {}
     });
 
     // Per-world learned sheet default sizes: keyed by constructor name, captured on first render.
@@ -2351,7 +2456,12 @@ class WindowControls {
       WindowControls._applyTaskbarColorFromSetting();
       WindowControls._applyTaskbarScrollbarColorFromSetting();
       WindowControls._applyPinnedHeaderColorFromSetting();
+      WindowControls._applyButtonSizeFromSetting();
       WindowControls._applyTaskbarWidthFromSetting();
+
+      // Load preset theme definitions then apply the active theme.
+      await WindowControls._loadThemesFromCSS();
+      WindowControls._applyThemeFromSetting();
 
       // Detect real libWrapper (not a shim/polyfill bundled by another module).
       // When present, route all prototype wraps through it so libWrapper can manage
@@ -2577,6 +2687,29 @@ class WindowControls {
     if (bar) bar.style.removeProperty('background-color');
   }
 
+  // Sets the shared button size variable used by header controls and taskbar buttons.
+  // To add more dropdown options, keep this map synchronized with the buttonSize choices.
+  static _setButtonSize(sizeKey) {
+    const pxByKey = {
+      small: 18,
+      medium: 20,
+      large: 24,
+    };
+    const px = pxByKey[sizeKey] ?? pxByKey.large;
+    const rootStyle = document.documentElement?.style;
+    if (rootStyle) rootStyle.setProperty('--wc-control-btn-size', `${px}px`);
+  }
+
+  // Reads the buttonSize setting and applies the CSS variable (called once at startup).
+  static _applyButtonSizeFromSetting() {
+    try {
+      const key = game?.settings?.get(WindowControls.MODULE_ID, 'buttonSize') ?? 'large';
+      WindowControls._setButtonSize(key);
+    } catch (e) {
+      // Ignore (e.g. before game/settings available).
+    }
+  }
+
   // Sets the taskbar scrollbar thumb color CSS variable.
   static _setTaskbarScrollbarColor(value) {
     if (typeof value !== 'string') return;
@@ -2647,6 +2780,9 @@ class WindowControls {
   // Reads the pinnedHeaderColor setting and applies it (called once at startup).
   static _applyPinnedHeaderColorFromSetting() {
     try {
+      // Skip if the theme system is managing this variable.
+      const themeEnabled = game?.settings?.get(WindowControls.MODULE_ID, 'wcThemeEnabled');
+      if (themeEnabled) return;
       const value = game?.settings?.get(WindowControls.MODULE_ID, 'pinnedHeaderColor');
       if (typeof value === 'string') WindowControls._setPinnedHeaderColor(value);
     } catch (e) {
@@ -2672,6 +2808,1354 @@ class WindowControls {
     } catch (e) {
       // Ignore (e.g. before game/settings available).
     }
+  }
+
+  // ── Taskbar Pattern System ─────────────────────────────────────────────────────
+
+  // All available background patterns.  Key is the stored setting value.
+  static get TASKBAR_PATTERNS() {
+    return WCN_PATTERNS.list;
+  }
+
+  // Delegates to the WCN_PATTERNS global defined in taskbarPatterns.js.
+  // hexColor: Secondary color '#rrggbb' (pattern lines), sizePx: tile size in pixels.
+  // bgHexColor: Primary color '#rrggbb' (scale body fill — used by seigaiha).
+  // Opacity is NOT baked into the color — it is applied as element opacity by _setTaskbarPattern.
+  static _taskbarPatternCSS(key, hexColor, sizePx, bgHexColor) {
+    return WCN_PATTERNS.getCSS(key, hexColor, sizePx, bgHexColor);
+  }
+
+  // Injects a <style> element to apply the chosen pattern to the real taskbar ::before.
+  // opacityPct (0–100) is applied as element-level opacity so both back and front colors
+  // remain solid (no alpha blending between them).
+  static _setTaskbarPattern(key, hexColor, opacityPct, sizePx, bgHexColor) {
+    const css = WindowControls._taskbarPatternCSS(key, hexColor, sizePx, bgHexColor);
+    let styleEl = document.getElementById('wc-taskbar-pattern-style');
+    if (!styleEl) {
+      styleEl = document.createElement('style');
+      styleEl.id = 'wc-taskbar-pattern-style';
+      document.head.appendChild(styleEl);
+    }
+    const opVal = Math.max(0, Math.min(1, (opacityPct ?? 80) / 100)).toFixed(2);
+    const clearAfter = `#window-controls-persistent::after { content: none; }`;
+
+    if (!css || css.image === 'none') {
+      styleEl.textContent = `#window-controls-persistent::before { background-image: none; opacity: ${opVal}; }\n${clearAfter}`;
+      return;
+    }
+    const pos = css.position ? `\n  background-position: ${css.position};` : '';
+    styleEl.textContent =
+      `#window-controls-persistent::before {\n  background-image: ${css.image};\n  background-size: ${css.size};${pos}\n  opacity: ${opVal};\n}\n${clearAfter}`;
+  }
+
+  // Reads the four pattern settings and applies the pattern to the real taskbar.
+  static _applyTaskbarPatternFromSettings() {
+    try {
+      const key     = game?.settings?.get(WindowControls.MODULE_ID, 'taskbarPattern')        ?? 'diagonal';
+      const color   = game?.settings?.get(WindowControls.MODULE_ID, 'taskbarPatternColor')   ?? '#000000';
+      const opacity = game?.settings?.get(WindowControls.MODULE_ID, 'taskbarPatternOpacity') ?? 80;
+      const size    = game?.settings?.get(WindowControls.MODULE_ID, 'taskbarPatternSize')    ?? 4;
+      const rawBg   = game?.settings?.get(WindowControls.MODULE_ID, 'taskbarColor')          ?? '#808080';
+      const bgHex   = WindowControls._cssColorToHex(rawBg);
+      WindowControls._setTaskbarPattern(key, color, opacity, size, bgHex);
+    } catch (e) {
+      // Ignore (e.g. before game/settings available).
+    }
+  }
+
+  // ── Theme System ───────────────────────────────────────────────────────────────
+
+  // Fetches themes.css and parses all WCN-THEME comment headers into _wcnThemes.
+  static async _loadThemesFromCSS() {
+    try {
+      const path = `modules/${WindowControls.MODULE_ID}/themes.css`;
+      const response = await fetch(path);
+      if (!response.ok) {
+        WindowControls._logAlways('_loadThemesFromCSS: Failed to fetch themes.css, status:', response.status);
+        return;
+      }
+      const text = await response.text();
+      const regex = /\/\*\s*WCN-THEME\s+id="([^"]+)"\s+name="([^"]+)"\s*\*\//g;
+      const themes = [];
+      let match;
+      while ((match = regex.exec(text)) !== null) {
+        themes.push({ id: match[1], name: match[2] });
+      }
+      WindowControls._wcnThemes = themes;
+      WindowControls._logAlways('_loadThemesFromCSS: Loaded', themes.length, 'theme(s):', themes.map(t => t.id).join(', '));
+    } catch (e) {
+      WindowControls._logAlways('_loadThemesFromCSS: Error loading themes.css', e);
+    }
+  }
+
+  // Returns the saved custom themes object from the wcCustomThemes setting.
+  static _loadCustomThemes() {
+    try {
+      return game?.settings?.get(WindowControls.MODULE_ID, 'wcCustomThemes') ?? {};
+    } catch {
+      return {};
+    }
+  }
+
+  // Removes all wc-theme-* body classes and applies the given theme id.
+  // Preset themes (theme1, theme2 …) get a body class; custom themes get inline CSS vars.
+  static _applyTheme(id) {
+    const body = document.body;
+    const rootStyle = document.documentElement?.style;
+    if (!body || !rootStyle) return;
+
+    // Remove all previously active preset theme classes.
+    const toRemove = [];
+    body.classList.forEach(cls => { if (cls.startsWith('wc-theme-')) toRemove.push(cls); });
+    toRemove.forEach(cls => body.classList.remove(cls));
+
+    // Always clear any inline theme vars so they don't bleed onto a preset theme.
+    WindowControls._WCN_THEME_VARS.forEach(v => rootStyle.removeProperty(v));
+
+    if (!id) return;
+
+    // Custom saved theme: apply variables directly on :root inline style.
+    const customThemes = WindowControls._loadCustomThemes();
+    if (customThemes[id]) {
+      const vars = customThemes[id].variables ?? {};
+      for (const [key, value] of Object.entries(vars)) {
+        if (key.startsWith('--wc-')) rootStyle.setProperty(key, value);
+      }
+      WindowControls._logAlways('_applyTheme: Applied custom theme:', id);
+      return;
+    }
+
+    // Preset theme: add the matching body class.
+    body.classList.add(`wc-theme-${id}`);
+    WindowControls._logAlways('_applyTheme: Applied preset theme:', id);
+  }
+
+  // Reads the current theme mode and active theme setting, then calls _applyTheme.
+  static _applyThemeFromSetting() {
+    try {
+      const enabled = game?.settings?.get(WindowControls.MODULE_ID, 'wcThemeEnabled');
+      if (enabled === false) {
+        // User opted out — strip all theme classes and inline vars, leave :root defaults.
+        const body = document.body;
+        const rootStyle = document.documentElement?.style;
+        const toRemove = [];
+        body?.classList?.forEach(cls => { if (cls.startsWith('wc-theme-')) toRemove.push(cls); });
+        toRemove.forEach(cls => body.classList.remove(cls));
+        WindowControls._WCN_THEME_VARS.forEach(v => rootStyle?.removeProperty(v));
+        return;
+      }
+      const mode = game?.settings?.get(WindowControls.MODULE_ID, 'wcThemeMode') ?? 'gm';
+      const id = mode === 'gm'
+        ? (game?.settings?.get(WindowControls.MODULE_ID, 'wcWorldTheme') ?? 'theme2')
+        : (game?.settings?.get(WindowControls.MODULE_ID, 'activeTheme') ?? 'theme2');
+      WindowControls._applyTheme(id);
+    } catch (e) {
+      // Ignore (e.g. before settings available).
+    }
+  }
+
+  // Reads the resolved CSS variable value for a given var name, checking the body element
+  // (where theme class overrides live) first, then :root, then the inline :root style.
+  static _resolveThemeVar(varName) {
+    const bodyStyle = getComputedStyle(document.body);
+    const rootStyle = getComputedStyle(document.documentElement);
+    return (
+      bodyStyle.getPropertyValue(varName).trim() ||
+      rootStyle.getPropertyValue(varName).trim() ||
+      ''
+    );
+  }
+
+  // Returns an object of all WCN theme variable current values (resolved from the live DOM).
+  static _captureCurrentThemeVars() {
+    const vars = {};
+    for (const v of WindowControls._WCN_THEME_VARS) {
+      vars[v] = WindowControls._resolveThemeVar(v);
+    }
+    return vars;
+  }
+
+  // Builds the HTML for the theme variable editor rows.
+  // Converts a CSS color value to the nearest #rrggbb hex string acceptable by <input type="color">.
+  // Alpha channel is intentionally dropped — the full value is still shown in the text field.
+  static _cssColorToHex(val) {
+    if (!val) return '#000000';
+    const v = val.trim();
+    if (!v || v === 'inherit' || v === 'transparent' || v === 'unset' || v === '0') return '#000000';
+    // Already #rrggbb or #rrggbbaa — return the 6-digit portion
+    if (/^#[0-9a-f]{8}$/i.test(v)) return v.slice(0, 7);
+    if (/^#[0-9a-f]{6}$/i.test(v)) return v;
+    // #rgb → #rrggbb
+    if (/^#[0-9a-f]{3}$/i.test(v)) return '#' + [v[1]+v[1], v[2]+v[2], v[3]+v[3]].join('');
+    // rgb() / rgba()
+    const rgb = v.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
+    if (rgb) return '#' + [rgb[1], rgb[2], rgb[3]].map(n => parseInt(n, 10).toString(16).padStart(2, '0')).join('');
+    // Named colours used in default theme vars
+    const named = { white: '#ffffff', black: '#000000', red: '#ff0000', green: '#008000', blue: '#0000ff', orange: '#ffa500' };
+    if (named[v.toLowerCase()]) return named[v.toLowerCase()];
+    return '#000000';
+  }
+
+  // Extracts alpha as an integer 0–100 from any CSS color value.
+  // Returns 100 if the value is opaque or non-colour.
+  static _extractColorAlpha(val) {
+    if (!val) return 100;
+    const v = val.trim();
+    if (!v || v === 'inherit' || v === 'transparent' || v === 'unset' || v === '0') return 100;
+    // 8-digit hex  #rrggbbaa
+    if (/^#[0-9a-f]{8}$/i.test(v)) return Math.round(parseInt(v.slice(7, 9), 16) / 255 * 100);
+    // 6-digit or 3-digit hex — fully opaque
+    if (/^#[0-9a-f]{6}$/i.test(v) || /^#[0-9a-f]{3}$/i.test(v)) return 100;
+    // rgba(r,g,b,a)
+    const rgba = v.match(/^rgba\s*\(\s*[\d.]+\s*,\s*[\d.]+\s*,\s*[\d.]+\s*,\s*([\d.]+)\s*\)/i);
+    if (rgba) return Math.round(parseFloat(rgba[1]) * 100);
+    return 100;
+  }
+
+  // Builds the Taskbar section HTML for the Theme Manager.
+  // Uses dedicated classes (wc-taskbar-*) so it stays independent of the theme var system.
+  static _buildTaskbarEditorRows(taskbarColor, scrollbarColor, patternKey, patternColor, patternOpacity, patternSize) {
+    const tbHex   = WindowControls._cssColorToHex(taskbarColor   || '#0000');
+    const tbAlpha = WindowControls._extractColorAlpha(taskbarColor || '#0000');
+    const scHex   = WindowControls._cssColorToHex(scrollbarColor || '#000000');
+    const scAlpha = WindowControls._extractColorAlpha(scrollbarColor || '#000000');
+
+    const pcHex = WindowControls._cssColorToHex(patternColor || '#000000');
+    const pKey  = patternKey ?? 'diagonal';
+    const pOpac   = patternOpacity ?? 80;
+    const pSize   = patternSize    ?? 4;
+
+    const patternOptions = WindowControls.TASKBAR_PATTERNS
+      .map(p => `<option value="${p.key}"${p.key === pKey ? ' selected' : ''}>${p.label}</option>`)
+      .join('');
+
+    return `
+      <div class="wc-theme-group">
+        <h4 class="wc-theme-group-label">Taskbar</h4>
+        <table class="wc-theme-table"><tbody>
+          <tr class="wc-theme-row">
+            <td class="wc-te-label">Pattern</td>
+            <td class="wc-te-fields" colspan="2">
+              <select id="wc-taskbar-pattern" class="wc-taskbar-pattern-select">${patternOptions}</select>
+            </td>
+          </tr>
+          <tr class="wc-theme-row wc-theme-row-color">
+            <td class="wc-te-label">Primary</td>
+            <td class="wc-te-fields">
+              <input type="text" class="wc-theme-color-input wc-taskbar-color-text" id="wc-taskbar-color-text" value="${tbHex}" placeholder="#rrggbb" maxlength="9">
+              <input type="text" class="wc-theme-percent-input wc-taskbar-color-alpha" id="wc-taskbar-color-alpha" value="${tbAlpha}" placeholder="100" maxlength="3" title="Opacity % (0–100)">
+              <span class="wc-te-alpha-label">%</span>
+            </td>
+            <td class="wc-te-swatch">
+              <input type="color" class="wc-theme-swatch wc-taskbar-color-swatch" id="wc-taskbar-color-swatch" value="${tbHex}" title="Primary (background) color">
+            </td>
+          </tr>
+          <tr class="wc-theme-row wc-theme-row-color" id="wc-taskbar-pattern-color-row">
+            <td class="wc-te-label">Secondary</td>
+            <td class="wc-te-fields">
+              <input type="text" class="wc-theme-color-input" id="wc-taskbar-pattern-color-text" value="${pcHex}" placeholder="#rrggbb" maxlength="9">
+            </td>
+            <td class="wc-te-swatch">
+              <input type="color" class="wc-theme-swatch" id="wc-taskbar-pattern-color-swatch" value="${pcHex}" title="Secondary (pattern) color">
+            </td>
+          </tr>
+          <tr class="wc-theme-row" id="wc-taskbar-pattern-size-row">
+            <td class="wc-te-label">Pattern Size</td>
+            <td class="wc-te-fields" colspan="2">
+              <input type="text" class="wc-theme-value-input" id="wc-taskbar-pattern-size" value="${pSize}" placeholder="4" title="Pattern tile size in px">
+              <span class="wc-te-alpha-label">px</span>
+            </td>
+          </tr>
+          <tr class="wc-theme-row wc-theme-row-color">
+            <td class="wc-te-label">Scrollbar</td>
+            <td class="wc-te-fields">
+              <input type="text" class="wc-theme-color-input wc-taskbar-scroll-text" id="wc-taskbar-scroll-text" value="${scHex}" placeholder="#rrggbb" maxlength="9">
+              <input type="text" class="wc-theme-percent-input wc-taskbar-scroll-alpha" id="wc-taskbar-scroll-alpha" value="${scAlpha}" placeholder="100" maxlength="3" title="Opacity % (0–100)">
+              <span class="wc-te-alpha-label">%</span>
+            </td>
+            <td class="wc-te-swatch">
+              <input type="color" class="wc-theme-swatch wc-taskbar-scroll-swatch" id="wc-taskbar-scroll-swatch" value="${scHex}" title="Scrollbar thumb color">
+            </td>
+          </tr>
+          <tr class="wc-theme-row" id="wc-taskbar-pattern-opacity-row">
+            <td class="wc-te-label">Taskbar Opacity</td>
+            <td class="wc-te-fields" colspan="2">
+              <input type="text" class="wc-theme-percent-input" id="wc-taskbar-pattern-opacity" value="${pOpac}" placeholder="80" title="Pattern opacity % (0-100)">
+              <span class="wc-te-alpha-label">%</span>
+            </td>
+          </tr>
+        </tbody></table>
+      </div>`;
+  }
+
+  static _buildThemeEditorRows(vars) {
+    // FVTT bundled fonts available in all worlds.
+    const WCN_FONTS = [
+      { value: 'inherit',            label: '— Inherit (default) —' },
+      { value: 'Signika',            label: 'Signika' },
+      { value: 'Modesto Condensed',  label: 'Modesto Condensed' },
+      { value: 'Palatino Linotype',  label: 'Palatino Linotype' },
+      { value: 'Ethnocentric',       label: 'Ethnocentric' },
+      { value: 'Bruno Ace SC',       label: 'Bruno Ace SC' },
+      { value: 'Roboto',             label: 'Roboto' },
+      { value: 'Arial',              label: 'Arial' },
+      { value: 'serif',              label: 'serif' },
+      { value: 'sans-serif',         label: 'sans-serif' },
+      { value: 'monospace',          label: 'monospace' },
+    ];
+
+    const fontOptions = (current) => WCN_FONTS.map(f =>
+      `<option value="${f.value}"${current === f.value || (f.value === 'inherit' && !current) ? ' selected' : ''}>${f.label}</option>`
+    ).join('');
+
+    // Each helper returns a <tr> for the containing <table>.
+    const colorRow = (key, label, val) => {
+      const hex   = WindowControls._cssColorToHex(val);
+      const alpha = WindowControls._extractColorAlpha(val);
+      return `<tr class="wc-theme-row wc-theme-row-color" data-var="${key}">
+        <td class="wc-te-label">${label}</td>
+        <td class="wc-te-fields">
+          <input type="text" class="wc-theme-color-input" data-var="${key}" value="${hex}" placeholder="#rrggbb" maxlength="9">
+          <input type="text" class="wc-theme-percent-input" data-var="${key}" value="${alpha}" placeholder="100" maxlength="3" title="Opacity % (0–100)">
+          <span class="wc-te-alpha-label">%</span>
+        </td>
+        <td class="wc-te-swatch">
+          <input type="color" class="wc-theme-swatch" data-var="${key}" value="${hex}" title="${key}">
+        </td>
+      </tr>`;
+    };
+
+    const fontRow = (key, label, val) => {
+      const clean = (val ?? '').replace(/['"/]/g, '').trim();
+      return `<tr class="wc-theme-row" data-var="${key}">
+        <td class="wc-te-label">${label}</td>
+        <td class="wc-te-fields" colspan="2">
+          <select class="wc-theme-select wc-theme-value-input" data-var="${key}">
+            ${fontOptions(clean)}
+          </select>
+        </td>
+      </tr>`;
+    };
+
+    const textRow = (key, label, val, placeholder) => `<tr class="wc-theme-row" data-var="${key}">
+      <td class="wc-te-label">${label}</td>
+      <td class="wc-te-fields" colspan="2">
+        <input type="text" class="wc-theme-value-input" data-var="${key}" value="${val ?? ''}" placeholder="${placeholder ?? key}">
+      </td>
+    </tr>`;
+
+    // Stroke row: size field + color text field + swatch. Stored as "1px #000000".
+    const strokeRow = (key, label, val) => {
+      const parts = (val ?? '').trim().split(/\s+/);
+      const sizeVal  = (parts.length >= 2) ? parts[0] : (val === '0' ? '0' : (val ?? ''));
+      const colorVal = (parts.length >= 2) ? parts.slice(1).join(' ') : '';
+      const hex = WindowControls._cssColorToHex(colorVal || '#000000');
+      return `<tr class="wc-theme-row wc-theme-row-stroke" data-var="${key}">
+        <td class="wc-te-label">${label}</td>
+        <td class="wc-te-fields">
+          <input type="text" class="wc-theme-value-input wc-theme-stroke-size" data-var="${key}" value="${sizeVal}" placeholder="1px" title="Size (px, decimals ok)">
+          <input type="text" class="wc-theme-color-input wc-theme-stroke-color-text" data-var="${key}" value="${hex}" placeholder="#000000" maxlength="9" title="Stroke color">
+        </td>
+        <td class="wc-te-swatch">
+          <input type="color" class="wc-theme-swatch wc-theme-stroke-swatch" data-var="${key}" value="${hex}" title="Stroke color">
+        </td>
+      </tr>`;
+    };
+
+    // Shadow row: offset/blur text + color hex + alpha + swatch. Stored as "0 0 10px #000000".
+    const shadowRow = (key, label, val) => {
+      const v = (val ?? '').trim();
+      // Split blur/offset from color: color token is the last token starting with # or rgb
+      const tokens = v.split(/\s+/);
+      let offsetPart = 'none', colorPart = '#000000', alpha = 100;
+      if (v === '' || v === 'none' || v === '0') {
+        offsetPart = v || 'none';
+      } else {
+        const lastToken = tokens[tokens.length - 1];
+        const isColor = /^#|^rgba?/i.test(lastToken);
+        if (isColor && tokens.length > 1) {
+          offsetPart = tokens.slice(0, -1).join(' ');
+          colorPart  = lastToken;
+        } else if (isColor) {
+          offsetPart = '0 0 10px';
+          colorPart  = lastToken;
+        } else {
+          offsetPart = v;
+        }
+      }
+      const hex = WindowControls._cssColorToHex(colorPart);
+      alpha = WindowControls._extractColorAlpha(colorPart);
+      return `<tr class="wc-theme-row wc-theme-row-shadow" data-var="${key}">
+        <td class="wc-te-label">${label}</td>
+        <td class="wc-te-fields">
+          <input type="text" class="wc-theme-value-input wc-theme-shadow-offset" data-var="${key}" value="${offsetPart}" placeholder="0 0 10px" title="Offset X, Offset Y, Blur (e.g. 0 0 10px (or 0 for hard line))">
+          <input type="text" class="wc-theme-color-input wc-theme-shadow-color-text" data-var="${key}" value="${hex}" placeholder="#000000" maxlength="9" title="Shadow color">
+          <input type="text" class="wc-theme-percent-input wc-theme-shadow-alpha" data-var="${key}" value="${alpha}" placeholder="100" maxlength="3" title="Opacity % (0–100)">
+          <span class="wc-te-alpha-label">%</span>
+        </td>
+        <td class="wc-te-swatch">
+          <input type="color" class="wc-theme-swatch wc-theme-shadow-swatch" data-var="${key}" value="${hex}" title="Shadow color">
+        </td>
+      </tr>`;
+    };
+
+    const groups = [
+      {
+        label: 'Window Headers & Buttons',
+        rows: () => [
+          colorRow('--wc-pinned-header-bg',      'Window Header Tint',    vars['--wc-pinned-header-bg']),
+          colorRow('--wc-pinned-taskbar-btn-bg', 'Pinned Button BG Color', vars['--wc-pinned-taskbar-btn-bg']),
+          colorRow('--wc-btn-bg',                'Non-pinned Button BG Color', vars['--wc-btn-bg']),
+        ].join('')
+      },
+      {
+        label: 'Pinned Taskbar Button Text',
+        rows: () => [
+          colorRow('--wc-btn-pinned-color',       'Text Color',   vars['--wc-btn-pinned-color']),
+          fontRow( '--wc-btn-pinned-font-family', 'Font Family',  vars['--wc-btn-pinned-font-family']),
+          textRow( '--wc-btn-pinned-font-size',   'Font Size',    vars['--wc-btn-pinned-font-size'],  'e.g. 1.3rem or 16px'),
+          textRow( '--wc-btn-pinned-font-weight', 'Font Weight',  vars['--wc-btn-pinned-font-weight'], 'e.g. bold or 700'),
+          strokeRow('--wc-btn-pinned-text-stroke','Text Stroke',  vars['--wc-btn-pinned-text-stroke']),
+          shadowRow('--wc-btn-pinned-text-shadow', 'Text Shadow',  vars['--wc-btn-pinned-text-shadow']),
+        ].join('')
+      },
+      {
+        label: 'Non-pinned Taskbar Button Text',
+        rows: () => [
+          colorRow('--wc-btn-color',      'Text Color',  vars['--wc-btn-color']),
+          fontRow( '--wc-btn-font-family','Font Family', vars['--wc-btn-font-family']),
+          textRow( '--wc-btn-font-size',  'Font Size',   vars['--wc-btn-font-size'],   'e.g. 1rem or 14px'),
+          textRow( '--wc-btn-font-weight','Font Weight', vars['--wc-btn-font-weight'], 'e.g. bold or 700'),
+          strokeRow('--wc-btn-text-stroke','Text Stroke',vars['--wc-btn-text-stroke']),
+          shadowRow('--wc-btn-text-shadow','Text Shadow', vars['--wc-btn-text-shadow']),
+        ].join('')
+      },
+      {
+        label: 'Header Inject Buttons',
+        rows: () => [
+          colorRow('--wc-header-btn-color',        'Icon Color',      vars['--wc-header-btn-color']),
+          colorRow('--wc-header-btn-bg',           'Background',      vars['--wc-header-btn-bg']),
+          colorRow('--wc-header-btn-pinned-color', 'Pin Active Color',vars['--wc-header-btn-pinned-color']),
+        ].join('')
+      },
+    ];
+
+    return groups.map(group => `
+      <div class="wc-theme-group">
+        <h4 class="wc-theme-group-label">${group.label}</h4>
+        <table class="wc-theme-table"><tbody>
+          ${group.rows()}
+        </tbody></table>
+      </div>`).join('');
+  }
+
+  // Builds the live preview — simulated window header + taskbar chip row.
+  static _buildThemePreviewHtml() {
+    return `
+      <div class="wc-theme-preview" id="wc-theme-preview">
+        <div class="wc-preview-window">
+          <div class="wc-preview-window-header" id="wc-preview-header">
+            <span class="wc-preview-window-title">My Window</span>
+            <div class="wc-preview-window-btns">
+              <span class="wc-preview-header-btn wc-preview-header-pin-inactive" title="Pin (inactive)"><i class="fas fa-thumbtack"></i></span>
+              <span class="wc-preview-header-btn wc-preview-header-pin-active" title="Pin (active)"><i class="fas fa-thumbtack"></i></span>
+              <span class="wc-preview-header-btn wc-preview-header-minimize" title="Minimize"><i class="fas fa-minus"></i></span>
+            </div>
+          </div>
+          <div class="wc-preview-window-body">Window content…</div>
+        </div>
+        <div class="wc-preview-taskbar" id="wc-preview-taskbar">
+          <span class="wc-preview-btn wc-preview-btn-normal">Normal Window</span>
+          <span class="wc-preview-btn wc-preview-btn-pinned">Pinned Window</span>
+        </div>
+      </div>`;
+  }
+
+  // Reads the current variable editor values from a dialog HTMLElement into a plain object.
+  // Stroke rows: assembles size + color fields back into "1px #000000" format.
+  static _readEditorVars(dialogEl) {
+    const vars = {};
+    // Color fields — combine with alpha if a matching percent field exists.
+    dialogEl.querySelectorAll('.wc-theme-color-input[data-var]:not(.wc-theme-stroke-color-text):not(.wc-theme-shadow-color-text)').forEach(input => {
+      const varName = input.dataset.var;
+      const hex = input.value.trim();
+      const alphaInput = dialogEl.querySelector(`.wc-theme-percent-input[data-var="${varName}"]:not(.wc-theme-shadow-alpha)`);
+      if (alphaInput) {
+        const pct = Math.max(0, Math.min(100, parseInt(alphaInput.value) || 100));
+        if (pct < 100) {
+          const aa = Math.round(pct / 100 * 255).toString(16).padStart(2, '0');
+          const base = /^#[0-9a-f]{6}$/i.test(hex) ? hex : WindowControls._cssColorToHex(hex);
+          vars[varName] = base + aa;
+        } else {
+          vars[varName] = hex;
+        }
+      } else {
+        vars[varName] = hex;
+      }
+    });
+    // Plain value fields (font family, font size, weight) that are not composite rows.
+    dialogEl.querySelectorAll('.wc-theme-value-input[data-var]:not(.wc-theme-stroke-size):not(.wc-theme-shadow-offset)').forEach(input => {
+      vars[input.dataset.var] = input.value.trim();
+    });
+    // Stroke rows: combine size + color into "<size> <color>".
+    dialogEl.querySelectorAll('.wc-theme-stroke-size[data-var]').forEach(sizeInput => {
+      const varName = sizeInput.dataset.var;
+      const size = sizeInput.value.trim();
+      const colorText = dialogEl.querySelector(`.wc-theme-stroke-color-text[data-var="${varName}"]`);
+      const color = colorText?.value?.trim() ?? '';
+      if (size === '0' || size === 'none' || size === '') {
+        vars[varName] = size || '0';
+      } else {
+        vars[varName] = color ? `${size} ${color}` : size;
+      }
+    });
+    // Shadow rows: combine offset/blur + color + alpha into "x y blur #rrggbbaa".
+    dialogEl.querySelectorAll('.wc-theme-shadow-offset[data-var]').forEach(offsetInput => {
+      const varName   = offsetInput.dataset.var;
+      const offset    = offsetInput.value.trim();
+      const colorText = dialogEl.querySelector(`.wc-theme-shadow-color-text[data-var="${varName}"]`);
+      const alphaInput= dialogEl.querySelector(`.wc-theme-shadow-alpha[data-var="${varName}"]`);
+      const hex       = colorText?.value?.trim() || '#000000';
+      const pct       = Math.max(0, Math.min(100, parseInt(alphaInput?.value) || 100));
+      let colorFinal;
+      if (pct < 100) {
+        const aa = Math.round(pct / 100 * 255).toString(16).padStart(2, '0');
+        const base = /^#[0-9a-f]{6}$/i.test(hex) ? hex : WindowControls._cssColorToHex(hex);
+        colorFinal = base + aa;
+      } else {
+        colorFinal = hex;
+      }
+      if (offset === '' || offset === 'none' || offset === '0') {
+        vars[varName] = offset || 'none';
+      } else {
+        vars[varName] = `${offset} ${colorFinal}`;
+      }
+    });
+    return vars;
+  }
+
+  // Reads the current values of all taskbar panel fields in the Theme Manager dialog.
+  static _readTaskbarEditorValues(dialogEl) {
+    const tbHex  = dialogEl.querySelector('#wc-taskbar-color-text')?.value?.trim() || '#000000';
+    const tbPct  = Math.max(0, Math.min(100, parseInt(dialogEl.querySelector('#wc-taskbar-color-alpha')?.value) || 100));
+    const tbAA   = tbPct < 100 ? Math.round(tbPct / 100 * 255).toString(16).padStart(2, '0') : '';
+    const tbBase = /^#[0-9a-f]{6}$/i.test(tbHex) ? tbHex : WindowControls._cssColorToHex(tbHex);
+
+    const scHex  = dialogEl.querySelector('#wc-taskbar-scroll-text')?.value?.trim() || '';
+    const scPct  = Math.max(0, Math.min(100, parseInt(dialogEl.querySelector('#wc-taskbar-scroll-alpha')?.value) || 100));
+    const scAA   = scPct < 100 ? Math.round(scPct / 100 * 255).toString(16).padStart(2, '0') : '';
+    const scBase = scHex ? (/^#[0-9a-f]{6}$/i.test(scHex) ? scHex : WindowControls._cssColorToHex(scHex)) : '';
+
+    const pcHex  = dialogEl.querySelector('#wc-taskbar-pattern-color-text')?.value?.trim() || '#000000';
+    const pcBase = /^#[0-9a-f]{6}$/i.test(pcHex) ? pcHex : WindowControls._cssColorToHex(pcHex);
+
+    return {
+      color:          tbAA ? tbBase + tbAA : tbBase,
+      scrollbarColor: scBase ? (scAA ? scBase + scAA : scBase) : '',
+      pattern:        dialogEl.querySelector('#wc-taskbar-pattern')?.value || 'diagonal',
+      patternColor:   pcBase,
+      patternOpacity: parseInt(dialogEl.querySelector('#wc-taskbar-pattern-opacity')?.value) || 80,
+      patternSize:    parseInt(dialogEl.querySelector('#wc-taskbar-pattern-size')?.value) || 4,
+    };
+  }
+
+  // Populates the taskbar panel fields from a stored taskbar settings object.
+  static _populateTaskbarFields(dialogEl, taskbar) {
+    const tbBase  = WindowControls._cssColorToHex(taskbar.color || '#000000');
+    const tbAlpha = WindowControls._extractColorAlpha(taskbar.color || '#000000');
+    const scBase  = taskbar.scrollbarColor ? WindowControls._cssColorToHex(taskbar.scrollbarColor) : '';
+    const scAlpha = taskbar.scrollbarColor ? WindowControls._extractColorAlpha(taskbar.scrollbarColor) : '100';
+    const pcBase  = taskbar.patternColor || '#000000';
+
+    const set = (id, val) => { const el = dialogEl.querySelector(`#${id}`); if (el) el.value = val; };
+    set('wc-taskbar-color-text',          tbBase);
+    set('wc-taskbar-color-alpha',         tbAlpha);
+    set('wc-taskbar-color-swatch',        tbBase);
+    set('wc-taskbar-scroll-text',         scBase);
+    set('wc-taskbar-scroll-alpha',        scAlpha);
+    set('wc-taskbar-scroll-swatch',       scBase || '#000000');
+    set('wc-taskbar-pattern',             taskbar.pattern || 'diagonal');
+    set('wc-taskbar-pattern-color-text',  pcBase);
+    set('wc-taskbar-pattern-color-swatch', pcBase);
+
+    const opacityEl = dialogEl.querySelector('#wc-taskbar-pattern-opacity');
+    if (opacityEl) {
+      opacityEl.value = taskbar.patternOpacity ?? 80;
+    }
+    const sizeEl = dialogEl.querySelector('#wc-taskbar-pattern-size');
+    if (sizeEl) {
+      sizeEl.value = taskbar.patternSize ?? 4;
+    }
+  }
+
+  // Updates the live preview strip in the dialog to reflect the current editor values.
+  static _updateThemePreview(dialogEl) {
+    const vars = WindowControls._readEditorVars(dialogEl);
+    const preview = dialogEl.querySelector('#wc-theme-preview');
+    if (!preview) return;
+
+    // Pinned header tint — value from _readEditorVars already includes alpha as #rrggbbaa if set.
+    const headerTintVal = vars['--wc-pinned-header-bg'] || 'rgba(0,0,0,0.5)';
+    const previewHeader = preview.querySelector('.wc-preview-window-header');
+    if (previewHeader) previewHeader.style.background = headerTintVal;
+
+    // Pinned taskbar button
+    const pinnedBg      = vars['--wc-pinned-taskbar-btn-bg']    || 'transparent';
+    const pinnedColor   = vars['--wc-btn-pinned-color']         || 'inherit';
+    const pinnedFont    = vars['--wc-btn-pinned-font-family']   || 'inherit';
+    const pinnedSize    = vars['--wc-btn-pinned-font-size']     || 'inherit';
+    const pinnedWeight  = vars['--wc-btn-pinned-font-weight']   || vars['--wc-btn-font-weight'] || 'inherit';
+    const pinnedStroke  = vars['--wc-btn-pinned-text-stroke']   || '0';
+    const pinnedShadow  = vars['--wc-btn-pinned-text-shadow']   || 'none';
+    const pinnedBtn = preview.querySelector('.wc-preview-btn-pinned');
+    if (pinnedBtn) {
+      pinnedBtn.style.backgroundColor  = pinnedBg;
+      pinnedBtn.style.color            = pinnedColor;
+      pinnedBtn.style.fontFamily       = pinnedFont;
+      pinnedBtn.style.fontSize         = pinnedSize;
+      pinnedBtn.style.fontWeight       = pinnedWeight;
+      pinnedBtn.style.webkitTextStroke = pinnedStroke;
+      pinnedBtn.style.textStroke       = pinnedStroke;
+      pinnedBtn.style.textShadow       = pinnedShadow;
+      pinnedBtn.style.paintOrder       = 'stroke fill';
+    }
+
+    // Normal taskbar button (all-taskbar vars)
+    const btnBg      = vars['--wc-btn-bg']           || '#00000066';
+    const btnColor   = vars['--wc-btn-color']        || 'inherit';
+    const btnFont    = vars['--wc-btn-font-family']  || 'inherit';
+    const btnSize    = vars['--wc-btn-font-size']    || 'inherit';
+    const btnWeight  = vars['--wc-btn-font-weight']  || 'inherit';
+    const btnStroke  = vars['--wc-btn-text-stroke']  || '0';
+    const btnShadow  = vars['--wc-btn-text-shadow']  || 'none';
+    const normalBtn = preview.querySelector('.wc-preview-btn-normal');
+    if (normalBtn) {
+      normalBtn.style.backgroundColor  = btnBg;
+      normalBtn.style.color            = btnColor;
+      normalBtn.style.fontFamily       = btnFont;
+      normalBtn.style.fontSize         = btnSize;
+      normalBtn.style.fontWeight       = btnWeight;
+      normalBtn.style.webkitTextStroke = btnStroke;
+      normalBtn.style.textStroke       = btnStroke;
+      normalBtn.style.textShadow       = btnShadow;
+      normalBtn.style.paintOrder       = 'stroke fill';
+    }
+
+    // Header inject buttons
+    const headerColor       = vars['--wc-header-btn-color']        || 'inherit';
+    const headerBg          = vars['--wc-header-btn-bg']           || 'transparent';
+    const headerPinnedColor = vars['--wc-header-btn-pinned-color'] || headerColor;
+    preview.querySelectorAll('.wc-preview-header-btn').forEach(btn => {
+      btn.style.color           = headerColor;
+      btn.style.backgroundColor = headerBg;
+    });
+    const activePinBtn = preview.querySelector('.wc-preview-header-pin-active');
+    if (activePinBtn) activePinBtn.style.color = headerPinnedColor;
+
+    // Taskbar strip background — read live from the taskbar color fields.
+    const taskbarColorText  = dialogEl.querySelector('#wc-taskbar-color-text');
+    const taskbarAlphaInput = dialogEl.querySelector('#wc-taskbar-color-alpha');
+    const previewTaskbar = preview.querySelector('#wc-preview-taskbar');
+    if (previewTaskbar && taskbarColorText) {
+      const hex  = taskbarColorText.value.trim() || '#000000';
+      const pct  = Math.max(0, Math.min(100, parseInt(taskbarAlphaInput?.value) || 100));
+      const aa   = pct < 100 ? Math.round(pct / 100 * 255).toString(16).padStart(2, '0') : '';
+      const base = /^#[0-9a-f]{6}$/i.test(hex) ? hex : WindowControls._cssColorToHex(hex);
+      previewTaskbar.style.backgroundColor = aa ? base + aa : base;
+
+      // Apply pattern overlay.
+      const patKey   = dialogEl.querySelector('#wc-taskbar-pattern')?.value || 'diagonal';
+      const patHex   = dialogEl.querySelector('#wc-taskbar-pattern-color-text')?.value?.trim() || '#000000';
+      const patOpac  = parseInt(dialogEl.querySelector('#wc-taskbar-pattern-opacity')?.value) || 80;
+      const patSize  = parseInt(dialogEl.querySelector('#wc-taskbar-pattern-size')?.value) || 4;
+      const patBgHex = /^#[0-9a-f]{6}$/i.test(base) ? base : WindowControls._cssColorToHex(base);
+      const patCSS   = WindowControls._taskbarPatternCSS(patKey, patHex, patSize, patBgHex);
+      const opVal    = (Math.max(0, Math.min(100, patOpac)) / 100).toFixed(2);
+      // Reset before applying.
+      previewTaskbar.style.backgroundImage    = '';
+      previewTaskbar.style.backgroundSize     = '';
+      previewTaskbar.style.backgroundPosition = '';
+      previewTaskbar.style.webkitMaskImage    = '';
+      previewTaskbar.style.maskImage          = '';
+      previewTaskbar.style.webkitMaskSize     = '';
+      previewTaskbar.style.maskSize           = '';
+      previewTaskbar.style.webkitMaskRepeat   = '';
+      previewTaskbar.style.maskRepeat         = '';
+      previewTaskbar.style.opacity            = '1';
+      if (patCSS && patCSS.image !== 'none') {
+        previewTaskbar.style.backgroundImage    = patCSS.image;
+        previewTaskbar.style.backgroundSize     = patCSS.size;
+        previewTaskbar.style.backgroundPosition = patCSS.position || '0 0';
+        previewTaskbar.style.opacity            = opVal;
+      }
+    }
+  }
+
+  // Downloads wcCustomThemes as a JSON file.
+  // Opens a DialogV2 letting the user pick which custom themes to export,
+  // then triggers a save-file dialog via foundry.utils.saveDataToFile.
+  static async _exportCustomThemes() {
+    const DialogV2 = foundry?.applications?.api?.DialogV2;
+    if (!DialogV2) return;
+
+    let allThemes;
+    try { allThemes = game.settings.get(WindowControls.MODULE_ID, 'wcCustomThemes') ?? {}; }
+    catch { allThemes = {}; }
+
+    const ids = Object.keys(allThemes);
+    if (!ids.length) {
+      ui?.notifications?.info?.('Window Controls: No custom themes to export.');
+      return;
+    }
+
+    const checkboxRows = ids.map(id => {
+      const name = allThemes[id]?.name ?? id;
+      return `<label class="wc-export-row">
+        <input type="checkbox" name="wc-export-theme" value="${id}" checked>
+        ${name}
+      </label>`;
+    }).join('');
+
+    const content = `
+      <div class="wc-export-dialog">
+        <p style="margin:0 0 8px">Select themes to export:</p>
+        <div class="wc-export-checklist">${checkboxRows}</div>
+      </div>`;
+
+    await DialogV2.wait({
+      window: { title: 'Export Custom Themes' },
+      content,
+      buttons: [
+        {
+          label: 'Export',
+          icon: 'fas fa-file-export',
+          action: 'export',
+          callback: (event, button, dialog) => {
+            const el = dialog?.element ?? button.closest('.application, .dialog') ?? document;
+            const checked = [...el.querySelectorAll('input[name="wc-export-theme"]:checked')].map(cb => cb.value);
+            if (!checked.length) {
+              ui?.notifications?.warn?.('Window Controls: No themes selected.');
+              return;
+            }
+            const subset = {};
+            for (const id of checked) subset[id] = allThemes[id];
+            const json = JSON.stringify(subset, null, 2);
+            foundry.utils.saveDataToFile(json, 'application/json', 'wcn-themes.json');
+          },
+        },
+        { label: 'Cancel', icon: 'fas fa-times', action: 'cancel' },
+      ],
+      rejectClose: false,
+    });
+  }
+
+  // Opens a file-picker input and reads the selected JSON, merging valid themes into wcCustomThemes.
+  static async _importCustomThemes() {
+    return new Promise((resolve) => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.json,application/json';
+      input.style.display = 'none';
+      document.body.appendChild(input);
+
+      const cleanup = () => { try { document.body.removeChild(input); } catch {} };
+
+      input.addEventListener('change', async () => {
+        const file = input.files?.[0];
+        cleanup();
+        if (!file) { resolve(false); return; }
+        try {
+          const text = await foundry.utils.readTextFromFile(file);
+          const imported = JSON.parse(text);
+          if (typeof imported !== 'object' || imported === null || Array.isArray(imported)) {
+            ui?.notifications?.error?.('Window Controls: Import failed — file must contain a JSON object.');
+            resolve(false); return;
+          }
+          const valid = {};
+          for (const [id, entry] of Object.entries(imported)) {
+            if (typeof entry?.variables === 'object' && entry.variables !== null) {
+              const taskbar = (entry.taskbar && typeof entry.taskbar === 'object') ? entry.taskbar : undefined;
+              valid[id] = { name: entry.name ?? id, variables: entry.variables, ...(taskbar ? { taskbar } : {}) };
+            }
+          }
+          if (!Object.keys(valid).length) {
+            ui?.notifications?.warn?.('Window Controls: No valid theme entries found.');
+            resolve(false); return;
+          }
+          let current;
+          try { current = game.settings.get(WindowControls.MODULE_ID, 'wcCustomThemes') ?? {}; }
+          catch { current = {}; }
+          await game.settings.set(WindowControls.MODULE_ID, 'wcCustomThemes', { ...current, ...valid });
+          ui?.notifications?.info?.(`Window Controls: Imported ${Object.keys(valid).length} custom theme(s).`);
+          resolve(true);
+        } catch (e) {
+          ui?.notifications?.error?.('Window Controls: Import failed — ' + e.message);
+          resolve(false);
+        }
+      });
+
+      input.addEventListener('cancel', () => { cleanup(); resolve(false); });
+      input.click();
+    });
+  }
+
+  // Opens the Theme Manager dialog — theme picker, variable editor, live preview, save/export/import.
+  static async _showThemeManagerDialog() {
+    const UNSAVED_THEME_ID = WindowControls._UNSAVED_THEME_ID;
+    const UNSAVED_THEME_NAME = WindowControls._UNSAVED_THEME_NAME;
+
+    const DialogV2 = foundry?.applications?.api?.DialogV2;
+    if (!DialogV2) {
+      ui?.notifications?.warn?.('Window Controls: DialogV2 not available in this version of Foundry.');
+      return;
+    }
+
+    const isGM = game.user.isGM;
+    let customThemes;
+    try { customThemes = game.settings.get(WindowControls.MODULE_ID, 'wcCustomThemes') ?? {}; }
+    catch { customThemes = {}; }
+
+    let mode;
+    try { mode = game.settings.get(WindowControls.MODULE_ID, 'wcThemeMode') ?? 'gm'; }
+    catch { mode = 'gm'; }
+
+    let worldThemeId;
+    try { worldThemeId = game.settings.get(WindowControls.MODULE_ID, 'wcWorldTheme') ?? 'theme2'; }
+    catch { worldThemeId = 'theme2'; }
+
+    let playerThemeId;
+    try { playerThemeId = game.settings.get(WindowControls.MODULE_ID, 'activeTheme') ?? 'theme2'; }
+    catch { playerThemeId = 'theme2'; }
+
+    // Build the theme option list (presets + custom).
+    const buildThemeOptions = (selectedId) => {
+      const presetOpts = WindowControls._wcnThemes.map(t =>
+        `<option value="${t.id}" ${t.id === selectedId ? 'selected' : ''}>${t.name}</option>`
+      ).join('');
+      const customEntries = Object.entries(customThemes);
+      const customOpts = customEntries.length
+        ? customEntries.map(([id, t]) =>
+            `<option value="${id}" ${id === selectedId ? 'selected' : ''}>${id === UNSAVED_THEME_ID ? UNSAVED_THEME_NAME : `${t.name ?? id} (Custom)`}</option>`
+          ).join('')
+        : '';
+      return `<optgroup label="Presets">${presetOpts}</optgroup>${customOpts ? `<optgroup label="Custom">${customOpts}</optgroup>` : ''}`;
+    };
+
+    // Determine the initially selected theme for the editor.
+    const initialThemeId = (WindowControls._themeUnsavedPending || !!customThemes?.[UNSAVED_THEME_ID])
+      ? UNSAVED_THEME_ID
+      : (mode === 'gm' ? worldThemeId : playerThemeId);
+    const capturedVars = WindowControls._captureCurrentThemeVars();
+
+    const modeSection = isGM ? `
+      <div class="form-group wc-theme-mode-row">
+        <label>Theme Control</label>
+        <div class="form-fields">
+          <select name="wcThemeMode">
+            <option value="gm" ${mode === 'gm' ? 'selected' : ''}>GM sets theme for everyone</option>
+            <option value="player" ${mode === 'player' ? 'selected' : ''}>Each player picks their own</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group wc-theme-active-row">
+        <label>Active Theme</label>
+        <div class="form-fields">
+          <select name="wcActiveTheme">${buildThemeOptions(initialThemeId)}</select>
+        </div>
+      </div>` : `
+      <div class="form-group wc-theme-active-row">
+        <label>Your Theme</label>
+        <div class="form-fields">
+          <select name="wcActiveTheme">${buildThemeOptions(playerThemeId)}</select>
+        </div>
+      </div>`;
+
+    const editorRows = WindowControls._buildThemeEditorRows(capturedVars);
+    const previewHtml = WindowControls._buildThemePreviewHtml();
+
+    let taskbarColorVal = '#0000';
+    let scrollbarColorVal = '';
+    let patternKeyVal = 'diagonal';
+    let patternColorVal = '#000000';
+    let patternOpacityVal = 80;
+    let patternSizeVal = 4;
+    try { taskbarColorVal    = game.settings.get(WindowControls.MODULE_ID, 'taskbarColor')          ?? '#0000'; } catch {}
+    try { scrollbarColorVal  = game.settings.get(WindowControls.MODULE_ID, 'taskbarScrollbarColor') ?? ''; } catch {}
+    try { patternKeyVal      = game.settings.get(WindowControls.MODULE_ID, 'taskbarPattern')        ?? 'diagonal'; } catch {}
+    try { patternColorVal    = game.settings.get(WindowControls.MODULE_ID, 'taskbarPatternColor')   ?? '#000000'; } catch {}
+    try { patternOpacityVal  = game.settings.get(WindowControls.MODULE_ID, 'taskbarPatternOpacity') ?? 80; } catch {}
+    try { patternSizeVal     = game.settings.get(WindowControls.MODULE_ID, 'taskbarPatternSize')    ?? 4; } catch {}
+    const taskbarRows = WindowControls._buildTaskbarEditorRows(taskbarColorVal, scrollbarColorVal, patternKeyVal, patternColorVal, patternOpacityVal, patternSizeVal);
+
+    const content = `
+      <div class="wc-theme-manager">
+        <div class="wc-theme-manager-top">
+          ${modeSection}
+        </div>
+        <hr>
+        <div class="wc-theme-manager-middle">
+          ${previewHtml}
+          <div class="wc-theme-middle-controls">
+            <div class="wc-theme-save-row">
+              <input type="text" id="wc-custom-theme-name" placeholder="Custom theme name…">
+            </div>
+            <div class="wc-theme-actions-row">
+              <button type="button" id="wc-save-custom-btn" title="Save as new custom theme">
+                <i class="fas fa-floppy-disk"></i> Save Custom
+              </button>
+              <div class="wc-theme-delete-row" id="wc-delete-row" style="display:none;">
+                <button type="button" id="wc-delete-custom-btn" class="wc-danger-btn" title="Delete selected custom theme">
+                  <i class="fas fa-trash"></i> Delete Theme
+                </button>
+              </div>
+              <button type="button" id="wc-export-btn" title="Export all custom themes to file">
+                <i class="fas fa-file-export"></i> Export
+              </button>
+              <button type="button" id="wc-import-btn" title="Import custom themes from file">
+                <i class="fas fa-file-import"></i> Import
+              </button>
+            </div>
+          </div>
+        </div>
+        <hr>
+        <div class="wc-theme-editor-scroll">
+          ${taskbarRows}
+          ${editorRows}
+        </div>
+      </div>`;
+
+    await DialogV2.wait({
+      window: { title: 'WCN: Theme Manager', positioned: true },
+      position: { width: 680 },
+      content,
+      rejectClose: false,
+      buttons: [
+        {
+          action: 'apply',
+          label: 'Apply & Close',
+          default: true,
+          callback: async (event, button, dialog) => {
+            await WindowControls._themeManagerApply(dialog.element, customThemes, isGM);
+          }
+        },
+        { action: 'cancel', label: 'Cancel', callback: () => {} }
+      ],
+      render: (event, dialog) => {
+        const el = dialog.element;
+
+        // Live preview on any input/change event.
+        el.addEventListener('input', (e) => {
+          const t = e.target;
+          const varName = t.dataset.var;
+
+          // Swatch → sync to matching text field (plain color, stroke color, or shadow color).
+          if (t.classList.contains('wc-theme-stroke-swatch')) {
+            const colorText = el.querySelector(`.wc-theme-stroke-color-text[data-var="${varName}"]`);
+            if (colorText) colorText.value = t.value;
+          } else if (t.classList.contains('wc-theme-shadow-swatch')) {
+            const colorText = el.querySelector(`.wc-theme-shadow-color-text[data-var="${varName}"]`);
+            if (colorText) colorText.value = t.value;
+          } else if (t.classList.contains('wc-theme-swatch')) {
+            const textField = el.querySelector(`.wc-theme-color-input[data-var="${varName}"]:not(.wc-theme-stroke-color-text):not(.wc-theme-shadow-color-text)`);
+            if (textField) textField.value = t.value;
+          }
+
+          // Plain color text field → sync to swatch.
+          if (t.classList.contains('wc-theme-color-input') && !t.classList.contains('wc-theme-stroke-color-text') && !t.classList.contains('wc-theme-shadow-color-text')) {
+            const swatch = el.querySelector(`.wc-theme-swatch[data-var="${varName}"]:not(.wc-theme-stroke-swatch):not(.wc-theme-shadow-swatch)`);
+            if (swatch && t.value.startsWith('#') && t.value.length >= 4) {
+              swatch.value = WindowControls._cssColorToHex(t.value);
+            }
+          }
+
+          // Stroke color text → sync to stroke swatch.
+          if (t.classList.contains('wc-theme-stroke-color-text')) {
+            const swatch = el.querySelector(`.wc-theme-stroke-swatch[data-var="${varName}"]`);
+            if (swatch && t.value.startsWith('#') && t.value.length >= 4) {
+              swatch.value = WindowControls._cssColorToHex(t.value);
+            }
+          }
+
+          // Shadow color text → sync to shadow swatch.
+          if (t.classList.contains('wc-theme-shadow-color-text')) {
+            const swatch = el.querySelector(`.wc-theme-shadow-swatch[data-var="${varName}"]`);
+            if (swatch && t.value.startsWith('#') && t.value.length >= 4) {
+              swatch.value = WindowControls._cssColorToHex(t.value);
+            }
+          }
+
+          // Taskbar color swatch → sync text field.
+          if (t.id === 'wc-taskbar-color-swatch') {
+            const tf = el.querySelector('#wc-taskbar-color-text');
+            if (tf) tf.value = t.value;
+          }
+          // Taskbar color text → sync swatch.
+          if (t.id === 'wc-taskbar-color-text') {
+            const sw = el.querySelector('#wc-taskbar-color-swatch');
+            if (sw && t.value.startsWith('#') && t.value.length >= 4) sw.value = WindowControls._cssColorToHex(t.value);
+          }
+          // Scrollbar swatch → sync text field.
+          if (t.id === 'wc-taskbar-scroll-swatch') {
+            const tf = el.querySelector('#wc-taskbar-scroll-text');
+            if (tf) tf.value = t.value;
+          }
+          // Scrollbar text → sync swatch.
+          if (t.id === 'wc-taskbar-scroll-text') {
+            const sw = el.querySelector('#wc-taskbar-scroll-swatch');
+            if (sw && t.value.startsWith('#') && t.value.length >= 4) sw.value = WindowControls._cssColorToHex(t.value);
+          }
+
+          // Pattern color swatch → sync text field.
+          if (t.id === 'wc-taskbar-pattern-color-swatch') {
+            const tf = el.querySelector('#wc-taskbar-pattern-color-text');
+            if (tf) tf.value = t.value;
+          }
+          // Pattern color text → sync swatch.
+          if (t.id === 'wc-taskbar-pattern-color-text') {
+            const sw = el.querySelector('#wc-taskbar-pattern-color-swatch');
+            if (sw && t.value.startsWith('#') && t.value.length >= 4) sw.value = WindowControls._cssColorToHex(t.value);
+          }
+          WindowControls._updateThemePreview(el);
+        });
+        // Font selects and pattern dropdown fire 'change', not 'input'.
+        el.addEventListener('change', (e) => {
+          if (e.target.classList.contains('wc-theme-select')) {
+            WindowControls._updateThemePreview(el);
+          }
+          if (e.target.id === 'wc-taskbar-pattern') {
+            WindowControls._updateThemePreview(el);
+          }
+        });
+
+        // Populate editor when theme selector changes.
+        const themeSelect = el.querySelector('[name="wcActiveTheme"]');
+        if (themeSelect) {
+          themeSelect.addEventListener('change', () => {
+            const selectedId = themeSelect.value;
+            // Show delete button only for custom themes.
+            const deleteRow = el.querySelector('#wc-delete-row');
+            if (deleteRow) deleteRow.style.display = customThemes[selectedId] ? '' : 'none';
+            // Load vars from DOM (apply the theme temporarily to read vars).
+            const savedBodyClasses = [...document.body.classList];
+            const savedInlineVars = {};
+            WindowControls._WCN_THEME_VARS.forEach(v => {
+              savedInlineVars[v] = document.documentElement.style.getPropertyValue(v);
+            });
+            // Apply temp to read resolved values.
+            WindowControls._applyTheme(selectedId);
+            const liveVars = WindowControls._captureCurrentThemeVars();
+            // Restore original state.
+            WindowControls._WCN_THEME_VARS.forEach(v => {
+              if (savedInlineVars[v]) {
+                document.documentElement.style.setProperty(v, savedInlineVars[v]);
+              } else {
+                document.documentElement.style.removeProperty(v);
+              }
+            });
+            document.body.className = '';
+            savedBodyClasses.forEach(c => document.body.classList.add(c));
+
+            // Repopulate all editor fields from the freshly-captured vars.
+            // 1. Plain color swatches + their text fields + alpha fields.
+            el.querySelectorAll('.wc-theme-swatch:not(.wc-theme-stroke-swatch):not(.wc-theme-shadow-swatch)[data-var]').forEach(swatch => {
+              const rawVal = liveVars[swatch.dataset.var] ?? '';
+              const hex    = WindowControls._cssColorToHex(rawVal);
+              const alpha  = WindowControls._extractColorAlpha(rawVal);
+              swatch.value = hex;
+              const textField = el.querySelector(`.wc-theme-color-input:not(.wc-theme-stroke-color-text):not(.wc-theme-shadow-color-text)[data-var="${swatch.dataset.var}"]`);
+              if (textField) textField.value = hex;
+              const alphaField = el.querySelector(`.wc-theme-percent-input:not(.wc-theme-shadow-alpha)[data-var="${swatch.dataset.var}"]`);
+              if (alphaField) alphaField.value = alpha;
+            });
+            // 2. Stroke rows — split "1px #000000" back into size + color fields.
+            el.querySelectorAll('.wc-theme-stroke-size[data-var]').forEach(sizeInput => {
+              const varName = sizeInput.dataset.var;
+              const raw = liveVars[varName] ?? '0';
+              const parts = raw.trim().split(/\s+/);
+              sizeInput.value = parts.length >= 2 ? parts[0] : raw;
+              const colorRaw = parts.length >= 2 ? parts.slice(1).join(' ') : '';
+              const hex = WindowControls._cssColorToHex(colorRaw || '#000000');
+              const colorText = el.querySelector(`.wc-theme-stroke-color-text[data-var="${varName}"]`);
+              if (colorText) colorText.value = hex;
+              const strokeSwatch = el.querySelector(`.wc-theme-stroke-swatch[data-var="${varName}"]`);
+              if (strokeSwatch) strokeSwatch.value = hex;
+            });
+            // 2b. Shadow rows — split "0 0 10px #000000" into offset + color + alpha.
+            el.querySelectorAll('.wc-theme-shadow-offset[data-var]').forEach(offsetInput => {
+              const varName = offsetInput.dataset.var;
+              const raw     = (liveVars[varName] ?? 'none').trim();
+              const tokens  = raw.split(/\s+/);
+              const lastToken = tokens[tokens.length - 1];
+              const isColor   = /^#|^rgba?/i.test(lastToken);
+              let offset = 'none', colorRaw = '#000000';
+              if (raw === 'none' || raw === '0' || raw === '') {
+                offset = raw || 'none';
+              } else if (isColor && tokens.length > 1) {
+                offset   = tokens.slice(0, -1).join(' ');
+                colorRaw = lastToken;
+              } else {
+                offset = raw;
+              }
+              const hex   = WindowControls._cssColorToHex(colorRaw);
+              const alpha = WindowControls._extractColorAlpha(colorRaw);
+              offsetInput.value = offset;
+              const colorText   = el.querySelector(`.wc-theme-shadow-color-text[data-var="${varName}"]`);
+              if (colorText) colorText.value = hex;
+              const alphaField  = el.querySelector(`.wc-theme-shadow-alpha[data-var="${varName}"]`);
+              if (alphaField) alphaField.value = alpha;
+              const shadowSwatch = el.querySelector(`.wc-theme-shadow-swatch[data-var="${varName}"]`);
+              if (shadowSwatch) shadowSwatch.value = hex;
+            });
+            // 3. Plain text fields (font size, weight) that have no swatch.
+            el.querySelectorAll('.wc-theme-value-input[data-var]:not(.wc-theme-stroke-size):not(.wc-theme-shadow-offset)').forEach(input => {
+              if (!el.querySelector(`.wc-theme-swatch:not(.wc-theme-stroke-swatch):not(.wc-theme-shadow-swatch)[data-var="${input.dataset.var}"]`)) {
+                input.value = liveVars[input.dataset.var] ?? '';
+              }
+            });
+            // 4. Font-family selects.
+            el.querySelectorAll('.wc-theme-select[data-var]').forEach(sel => {
+              const raw = (liveVars[sel.dataset.var] ?? '').replace(/['"]/g, '').trim();
+              const opt = [...sel.options].find(o => o.value === raw);
+              if (opt) sel.value = raw;
+            });
+
+            // If this custom theme has stored taskbar settings, populate the taskbar panel.
+            const storedTaskbar = customThemes[selectedId]?.taskbar;
+            if (storedTaskbar) WindowControls._populateTaskbarFields(el, storedTaskbar);
+
+            WindowControls._updateThemePreview(el);
+          });
+        }
+
+        // Save as custom theme.
+        el.querySelector('#wc-save-custom-btn')?.addEventListener('click', async () => {
+          const nameInput = el.querySelector('#wc-custom-theme-name');
+          const name = nameInput?.value?.trim();
+          if (!name) {
+            ui?.notifications?.warn?.('Window Controls: Enter a name for the custom theme.');
+            return;
+          }
+
+          const vars    = WindowControls._readEditorVars(el);
+          const taskbar = WindowControls._readTaskbarEditorValues(el);
+          let current;
+          try { current = game.settings.get(WindowControls.MODULE_ID, 'wcCustomThemes') ?? {}; }
+          catch { current = {}; }
+
+          // Saving a named custom theme from an applied unsaved draft clears the temp draft entry.
+          if (current[UNSAVED_THEME_ID]) delete current[UNSAVED_THEME_ID];
+
+          const existing = Object.entries(current).find(([id, theme]) => {
+            const existingName = String(theme?.name ?? '').trim().toLowerCase();
+            return existingName && existingName === name.toLowerCase();
+          });
+
+          let id;
+          let wasOverwrite = false;
+          if (existing) {
+            const [existingId, existingTheme] = existing;
+            const existingName = existingTheme?.name ?? name;
+            const overwrite = await DialogV2.confirm({
+              window: { title: 'Overwrite Custom Theme?', positioned: true },
+              content: `<p>A custom theme named <strong>${foundry.utils.escapeHTML(existingName)}</strong> already exists. Overwrite it?</p>`,
+              yes: { label: 'Overwrite', icon: 'fas fa-save', callback: () => true },
+              no:  { label: 'Cancel', callback: () => false },
+              rejectClose: false,
+            });
+            if (!overwrite) return;
+            id = existingId;
+            wasOverwrite = true;
+          } else {
+            id = 'custom_' + name.toLowerCase().replace(/[^a-z0-9_-]/g, '_').slice(0, 32) + '_' + Date.now().toString(36);
+          }
+
+          customThemes = { ...current, [id]: { name, variables: vars, taskbar } };
+          await game.settings.set(WindowControls.MODULE_ID, 'wcCustomThemes', customThemes);
+
+          // Saving a named custom theme clears the session unsaved reminder.
+          WindowControls._themeUnsavedPending = false;
+          WindowControls._themeUnsavedBaseId = id;
+
+          ui?.notifications?.info?.(
+            wasOverwrite
+              ? `Window Controls: Overwrote custom theme "${name}".`
+              : `Window Controls: Saved custom theme "${name}".`
+          );
+          if (nameInput) nameInput.value = '';
+          // Refresh select options.
+          if (themeSelect) {
+            themeSelect.innerHTML = buildThemeOptions(id);
+            el.querySelector('#wc-delete-row').style.display = '';
+          }
+        });
+
+        // Delete custom theme.
+        el.querySelector('#wc-delete-custom-btn')?.addEventListener('click', async () => {
+          const selectedId = themeSelect?.value;
+          if (!selectedId || !customThemes[selectedId]) return;
+          const themeName = customThemes[selectedId]?.name ?? selectedId;
+          const confirmed = await DialogV2.confirm({
+            window: { title: 'Delete Custom Theme?', positioned: true },
+            content: `<p>Delete custom theme <strong>${themeName}</strong>? This cannot be undone.</p>`,
+            yes: { label: 'Delete', icon: 'fas fa-trash', callback: () => true },
+            no:  { label: 'Cancel', callback: () => false },
+            rejectClose: false,
+          });
+          if (!confirmed) return;
+          delete customThemes[selectedId];
+          await game.settings.set(WindowControls.MODULE_ID, 'wcCustomThemes', { ...customThemes });
+          ui?.notifications?.info?.(`Window Controls: Deleted custom theme "${themeName}".`);
+          const fallbackId = WindowControls._wcnThemes[0]?.id ?? 'theme1';
+          if (themeSelect) {
+            themeSelect.innerHTML = buildThemeOptions(fallbackId);
+            el.querySelector('#wc-delete-row').style.display = 'none';
+          }
+        });
+
+        // Export.
+        el.querySelector('#wc-export-btn')?.addEventListener('click', async () => {
+          await WindowControls._exportCustomThemes();
+        });
+
+        // Import.
+        el.querySelector('#wc-import-btn')?.addEventListener('click', async () => {
+          const imported = await WindowControls._importCustomThemes();
+          if (imported) {
+            try { customThemes = game.settings.get(WindowControls.MODULE_ID, 'wcCustomThemes') ?? {}; }
+            catch { customThemes = {}; }
+            const currentSel = themeSelect?.value ?? initialThemeId;
+            if (themeSelect) themeSelect.innerHTML = buildThemeOptions(currentSel);
+          }
+        });
+
+        // Init preview on open.
+        WindowControls._updateThemePreview(el);
+      }
+    });
+  }
+
+  // Applies the selected theme/mode plus current editor values from the Theme Manager dialog.
+  // This allows testing unsaved tweaks immediately without saving a custom theme first.
+  static async _themeManagerApply(dialogEl, customThemes, isGM) {
+    const UNSAVED_THEME_ID = WindowControls._UNSAVED_THEME_ID;
+    const UNSAVED_THEME_NAME = WindowControls._UNSAVED_THEME_NAME;
+    const themeSelect = dialogEl.querySelector('[name="wcActiveTheme"]');
+    const modeSelect  = dialogEl.querySelector('[name="wcThemeMode"]');
+    const selectedId  = themeSelect?.value ?? 'theme2';
+    const selectedMode = modeSelect?.value ?? 'gm';
+
+    const currentWorldTheme = (() => {
+      try { return game.settings.get(WindowControls.MODULE_ID, 'wcWorldTheme') ?? 'theme2'; }
+      catch { return 'theme2'; }
+    })();
+    const currentPlayerTheme = (() => {
+      try { return game.settings.get(WindowControls.MODULE_ID, 'activeTheme') ?? 'theme2'; }
+      catch { return 'theme2'; }
+    })();
+
+    // Base theme for persisted selected theme settings (never set world/client theme to temp unsaved id).
+    const baseThemeId = selectedId === UNSAVED_THEME_ID
+      ? (WindowControls._themeUnsavedBaseId || (selectedMode === 'gm' ? currentWorldTheme : currentPlayerTheme))
+      : selectedId;
+
+    // Save taskbar color settings.
+    const tbText  = dialogEl.querySelector('#wc-taskbar-color-text');
+    const tbAlpha = dialogEl.querySelector('#wc-taskbar-color-alpha');
+    const scText  = dialogEl.querySelector('#wc-taskbar-scroll-text');
+    const scAlpha = dialogEl.querySelector('#wc-taskbar-scroll-alpha');
+    if (tbText) {
+      const hex  = tbText.value.trim() || '#000000';
+      const pct  = Math.max(0, Math.min(100, parseInt(tbAlpha?.value) || 100));
+      const aa   = pct < 100 ? Math.round(pct / 100 * 255).toString(16).padStart(2, '0') : '';
+      const base = /^#[0-9a-f]{6}$/i.test(hex) ? hex : WindowControls._cssColorToHex(hex);
+      try { await game.settings.set(WindowControls.MODULE_ID, 'taskbarColor', aa ? base + aa : base); } catch {}
+    }
+    if (scText) {
+      const hex  = scText.value.trim() || '';
+      const pct  = Math.max(0, Math.min(100, parseInt(scAlpha?.value) || 100));
+      const aa   = pct < 100 ? Math.round(pct / 100 * 255).toString(16).padStart(2, '0') : '';
+      const base = /^#[0-9a-f]{6}$/i.test(hex) ? hex : (hex ? WindowControls._cssColorToHex(hex) : '');
+      try { await game.settings.set(WindowControls.MODULE_ID, 'taskbarScrollbarColor', aa ? base + aa : base); } catch {}
+    }
+
+    // Save taskbar pattern settings.
+    const patSelect = dialogEl.querySelector('#wc-taskbar-pattern');
+    const patColorText  = dialogEl.querySelector('#wc-taskbar-pattern-color-text');
+    const patColorAlpha = dialogEl.querySelector('#wc-taskbar-pattern-color-alpha');
+    const patOpacityEl  = dialogEl.querySelector('#wc-taskbar-pattern-opacity');
+    const patSizeEl     = dialogEl.querySelector('#wc-taskbar-pattern-size');
+    if (patSelect) {
+      try { await game.settings.set(WindowControls.MODULE_ID, 'taskbarPattern', patSelect.value || 'diagonal'); } catch {}
+    }
+    if (patColorText) {
+      const hex  = patColorText.value.trim() || '#000000';
+      const base = /^#[0-9a-f]{6}$/i.test(hex) ? hex : WindowControls._cssColorToHex(hex);
+      try { await game.settings.set(WindowControls.MODULE_ID, 'taskbarPatternColor', base); } catch {}
+    }
+    if (patOpacityEl) {
+      try { await game.settings.set(WindowControls.MODULE_ID, 'taskbarPatternOpacity', parseInt(patOpacityEl.value) || 80); } catch {}
+    }
+    if (patSizeEl) {
+      try { await game.settings.set(WindowControls.MODULE_ID, 'taskbarPatternSize', parseInt(patSizeEl.value) || 4); } catch {}
+    }
+
+    if (selectedId !== UNSAVED_THEME_ID) {
+      try {
+        if (isGM) {
+          await game.settings.set(WindowControls.MODULE_ID, 'wcThemeMode', selectedMode);
+          if (selectedMode === 'gm') {
+            await game.settings.set(WindowControls.MODULE_ID, 'wcWorldTheme', selectedId);
+          } else {
+            await game.settings.set(WindowControls.MODULE_ID, 'activeTheme', selectedId);
+          }
+        } else {
+          await game.settings.set(WindowControls.MODULE_ID, 'activeTheme', selectedId);
+        }
+      } catch (e) {
+        ui?.notifications?.error?.('Window Controls: Failed to save theme settings — ' + e.message);
+        return;
+      }
+    }
+
+    // Persist a temporary client-side Unsaved Theme snapshot so users can switch away and
+    // back to it during later edits. It is cleared when Save Custom is used.
+    const vars = WindowControls._readEditorVars(dialogEl);
+    const taskbar = WindowControls._readTaskbarEditorValues(dialogEl);
+    let currentCustomThemes;
+    try { currentCustomThemes = game.settings.get(WindowControls.MODULE_ID, 'wcCustomThemes') ?? {}; }
+    catch { currentCustomThemes = {}; }
+    currentCustomThemes = {
+      ...currentCustomThemes,
+      [UNSAVED_THEME_ID]: {
+        name: UNSAVED_THEME_NAME,
+        variables: vars,
+        taskbar,
+      }
+    };
+    await game.settings.set(WindowControls.MODULE_ID, 'wcCustomThemes', currentCustomThemes);
+
+    // Apply the persisted temp unsaved theme directly (instead of only inline overlay).
+    WindowControls._applyTheme(UNSAVED_THEME_ID);
+
+    const rootStyle = document.documentElement?.style;
+    if (rootStyle) {
+      for (const key of WindowControls._WCN_THEME_VARS) {
+        if (!key.startsWith('--wc-')) continue;
+        const value = vars[key];
+        if (typeof value === 'string' && value.trim() !== '') {
+          rootStyle.setProperty(key, value.trim());
+        }
+      }
+    }
+
+    // Ensure immediate visual sync without requiring a full page reload.
+    WindowControls._applyTaskbarColorFromSetting();
+    WindowControls._applyTaskbarScrollbarColorFromSetting();
+    WindowControls._applyTaskbarPatternFromSettings();
+
+    // Mark session as unsaved so the Theme Manager shows an explicit reminder option.
+    WindowControls._themeUnsavedPending = true;
+    WindowControls._themeUnsavedBaseId = baseThemeId;
   }
 
   // Measures the sidebar element width and updates the --wc-sidebar-width CSS variable.
@@ -2875,11 +4359,13 @@ class WindowControls {
     // Remove previous injected headers and GM-only buttons if SettingsConfig re-renders.
     moduleRoot.find('.wc-settings-header, .wc-settings-btn-group').remove();
 
-    const taskbarKeys = ['organizedMinimize', 'taskbarWidth', 'minimizeButton', 'defaultSizeButton', 'maximizeButton', 'maximizeWidth', 'maximizeHeight', 'clickOutsideMinimize', 'taskbarColor', 'taskbarScrollbarColor', 'debugLogging', 'debugVerbose'];
-    const pinningKeys = ['pinnedButton', 'pinnedHeaderColor', 'pinnedDoubleTapping', 'rememberPinnedWindows'];
+    const taskbarKeys = ['organizedMinimize', 'taskbarWidth', 'minimizeButton', 'defaultSizeButton', 'maximizeButton', 'maximizeWidth', 'maximizeHeight', 'clickOutsideMinimize', 'debugLogging', 'debugVerbose'];
+    const pinningKeys = ['pinnedButton', 'pinnedDoubleTapping', 'rememberPinnedWindows'];
+    const themingKeys = ['wcThemeEnabled'];
 
     const taskbarHeader = $('<h3 class="wc-settings-header">Taskbar</h3>');
     const pinningHeader = $('<h3 class="wc-settings-header">Pinning</h3>');
+    const themingHeader = $('<h3 class="wc-settings-header">Theming</h3>');
 
     // WCN master kill-switch comes first, above section headers.
     const wcDisabledGroup = getGroup('wcDisabled');
@@ -2917,10 +4403,26 @@ class WindowControls {
       if (g?.length) moduleRoot.append(g);
     }
 
-    // Enhance color settings with a color picker control.
-    WindowControls._enhanceColorPickerSetting($html, 'taskbarColor');
-    WindowControls._enhanceColorPickerSetting($html, 'taskbarScrollbarColor');
-    WindowControls._enhanceColorPickerSetting($html, 'pinnedHeaderColor');
+    // Theming section: opt-out toggle + Theme Manager button.
+    moduleRoot.append(themingHeader);
+    for (const key of themingKeys) {
+      const g = getGroup(key);
+      if (g?.length) moduleRoot.append(g);
+    }
+    const $themeBtn = $(`
+      <div class="form-group wc-settings-btn-group">
+        <label>Theme Manager</label>
+        <div class="form-fields">
+          <button type="button" class="wc-theme-manager-open-btn">
+            <i class="fas fa-palette"></i> Open Theme Manager
+          </button>
+        </div>
+        <p class="hint">Choose a preset or custom theme. Create, save, export and import custom themes.</p>
+      </div>`);
+    $themeBtn.find('.wc-theme-manager-open-btn').on('click', () => {
+      void WindowControls._showThemeManagerDialog();
+    });
+    moduleRoot.append($themeBtn);
 
     // Hide GM-only settings from non-GM players.
     if (!game.user?.isGM) {
@@ -3036,6 +4538,7 @@ Hooks.once('ready', () => {
   // Apply taskbar visual settings after DOM is ready.
   WindowControls._applyTaskbarColorFromSetting();
   WindowControls._applyTaskbarScrollbarColorFromSetting();
+  WindowControls._applyTaskbarPatternFromSettings();
   WindowControls._applyPinnedHeaderColorFromSetting();
 
 

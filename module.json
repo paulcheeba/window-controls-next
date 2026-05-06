@@ -25,12 +25,18 @@
       }
     ]
   },
+  "scripts": [
+    "taskbarPatterns.js"
+  ],
   "esmodules": [
     "windowcontrols.js"
   ],
   "styles": [
     {
       "src": "windowcontrols.css"
+    },
+    {
+      "src": "themes.css"
     }
   ],
   "languages": [

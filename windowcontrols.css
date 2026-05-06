@@ -10,10 +10,33 @@
     --taskbarcolor: #0000;
     --wc-taskbar-height: 40px;
     --wc-sidebar-width: 0px;
+    --wc-control-btn-size: 24px;
 
     /* Pinned styling: user chooses base color; header is forced to 25% alpha; taskbar pinned button is 20% darker with no alpha */
-    --wc-pinned-header-bg: rgba(255, 136, 0, 0.25);
-    --wc-pinned-taskbar-btn-bg: rgb(204, 109, 0);
+    --wc-pinned-header-bg: #ff880040;
+    --wc-pinned-taskbar-btn-bg: #cc6d00;
+    --wc-btn-bg: #00000066;
+
+    /* Taskbar button text styling (all buttons) */
+    --wc-btn-font-family: inherit;
+    --wc-btn-font-size: inherit;
+    --wc-btn-font-weight: inherit;
+    --wc-btn-color: inherit;
+    --wc-btn-text-stroke: 0;
+    --wc-btn-text-shadow: none;
+
+    /* Pinned taskbar button text styling (unstyled baseline — themes override these) */
+    --wc-btn-pinned-font-family: inherit;
+    --wc-btn-pinned-font-size: inherit;
+    --wc-btn-pinned-font-weight: inherit;
+    --wc-btn-pinned-color: inherit;
+    --wc-btn-pinned-text-stroke: 0;
+    --wc-btn-pinned-text-shadow: none;
+
+    /* Header inject button styling */
+    --wc-header-btn-color: inherit;
+    --wc-header-btn-bg: transparent;
+    --wc-header-btn-pinned-color: inherit;
 }
 
 /* ── Taskbar Bar ──────────────────────────────────────────────────────────── */
@@ -31,15 +54,12 @@
     box-sizing: border-box;
 }
 
-/* Render the bar background at 80% opacity without affecting button opacity. */
+/* Bar background layer — pattern is injected via JS into a <style id="wc-taskbar-pattern-style">. */
 #window-controls-persistent::before {
     content: "";
     position: absolute;
     inset: 0;
     background-color: var(--taskbarcolor);
-    background-image: linear-gradient(45deg, transparent 49%, #000000 49%, #000000 51%, transparent 51%), linear-gradient(-45deg, transparent 49%, #000000 49%, #000000 51%, transparent 51%);
-    background-size: 4px 4px;
-    opacity: 0.8;
     pointer-events: none;
     z-index: 0;
 }
@@ -198,23 +218,31 @@ body.wc-taskbar-canvas-only {
 
 /* ── Taskbar Buttons ─────────────────────────────────────────────────────── */
 #window-controls-persistent .wc-taskbar-btn {
-    --button-size: 24px;
+    --button-size: var(--wc-control-btn-size, 24px);
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    height: 24px;
+    height: var(--wc-control-btn-size, 24px);
     padding: 0 4px;
+    background-color: var(--wc-btn-bg, #00000066);
+    paint-order: stroke fill;
+    color: var(--wc-btn-color, inherit);
+    font-family: var(--wc-btn-font-family, inherit);
+    font-size: var(--wc-btn-font-size, inherit);
+    font-weight: var(--wc-btn-font-weight, inherit);
+    -webkit-text-stroke: var(--wc-btn-text-stroke, 0);
+    text-shadow: var(--wc-btn-text-shadow, none);
 }
 
 #window-controls-persistent .wc-taskbar-btn.pinned {
     background-color: var(--wc-pinned-taskbar-btn-bg);
-    -webkit-text-stroke: 1px #000;
-    color: white;
+    -webkit-text-stroke: var(--wc-btn-pinned-text-stroke, var(--wc-btn-text-stroke, 0));
+    color: var(--wc-btn-pinned-color, var(--wc-btn-color, inherit));
     paint-order: stroke fill;
-    font-weight: 500;
-    text-shadow: 0 0 10px #000000;
-    font-family: 'Modesto Condensed';
-    font-size: 1.3rem;
+    font-weight: var(--wc-btn-pinned-font-weight, var(--wc-btn-font-weight, inherit));
+    text-shadow: var(--wc-btn-pinned-text-shadow, var(--wc-btn-text-shadow, none));
+    font-family: var(--wc-btn-pinned-font-family, var(--wc-btn-font-family, inherit));
+    font-size: var(--wc-btn-pinned-font-size, var(--wc-btn-font-size, inherit));
 }
 
 #window-controls-persistent .wc-taskbar-btn .wc-taskbar-label {
@@ -222,6 +250,8 @@ body.wc-taskbar-canvas-only {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    -webkit-text-stroke: inherit;
+    text-shadow: inherit;
 }
 
 /* ── Settings UI ─────────────────────────────────────────────────────────── */
@@ -286,16 +316,24 @@ input[type="color"].wc-color-picker::-moz-color-swatch {
     flex-wrap: nowrap !important;
     align-items: center !important;
     justify-content: center !important;
-    gap: 2px;
+    gap: 4px;
 }
 
 .window-controls-inline .window-controls-inline-btn {
     display: inline-flex !important;
     flex: 0 0 auto;
-    width: 24px;
-    height: 24px;
+    width: var(--wc-control-btn-size, 24px);
+    height: var(--wc-control-btn-size, 24px);
     align-items: center !important;
     justify-content: center !important;
+    color: var(--wc-header-btn-color, inherit);
+    background: var(--wc-header-btn-bg, transparent);
+}
+
+/* Pin button icon colour when the window is currently pinned */
+.window-controls-inline .window-controls-inline-btn.pin.active,
+.minimized-pinned .window-controls-inline .window-controls-inline-btn.pin {
+    color: var(--wc-header-btn-pinned-color, var(--wc-header-btn-color, inherit));
 }
 
 .minimized.window-app .window-header a,
@@ -382,9 +420,6 @@ input[type="color"].wc-color-picker::-moz-color-swatch {
     font-weight: bold;
 }
 
-.wc-defaults-table tbody tr:nth-child(odd) {
-    background: rgba(0, 0, 0, 0.05);
-}
 
 .wc-defaults-table .wc-dsd-size {
     white-space: nowrap;
@@ -420,11 +455,345 @@ input[type="color"].wc-color-picker::-moz-color-swatch {
 }
 
 /* Settings panel inject */
-.wc-settings-btn-group .wc-sheet-defaults-open-btn {
+.wc-settings-btn-group .wc-sheet-defaults-open-btn,
+.wc-settings-btn-group .wc-theme-manager-open-btn {
     cursor: pointer;
 }
 
 /* Edit default dialog */
 .wc-edit-default-dialog p {
     margin-bottom: 8px;
+}
+
+/* ── Theme Manager dialog ────────────────────────────────────────────────── */
+.wc-theme-manager {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.wc-theme-manager-top {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+/* Middle stack: preview first, custom-theme controls below. */
+.wc-theme-manager-middle {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: stretch;
+}
+
+/* Live preview panel */
+.wc-theme-preview {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+/* Simulated FVTT application window */
+.wc-preview-window {
+    border-radius: 4px;
+    overflow: hidden;
+    border: 1px solid var(--color-border-light-2, #555);
+}
+
+.wc-preview-window-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5px 8px;
+    background: rgba(0, 0, 0, 0.5);
+    position: relative;
+}
+
+.wc-preview-window-title {
+    font-size: var(--font-size-12, 12px);
+    opacity: 0.65;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.wc-preview-window-btns {
+    display: flex;
+    gap: 2px;
+    flex-shrink: 0;
+}
+
+.wc-preview-header-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 2px;
+    font-size: 11px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    cursor: default;
+}
+
+.wc-preview-window-body {
+    padding: 14px 8px;
+    background: rgba(0, 0, 0, 0.15);
+    font-size: var(--font-size-11, 11px);
+    opacity: 0.35;
+    text-align: center;
+}
+
+/* Simulated taskbar strip */
+.wc-preview-taskbar {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+    align-items: center;
+    padding: 3px 6px;
+    border-radius: 0 0 4px 4px;
+    min-height: 28px;
+}
+
+.wc-preview-btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 6px;
+    border-radius: 2px;
+    font-size: var(--font-size-12, 12px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+/* Range slider rows in Taskbar section */
+.wc-taskbar-range {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.wc-taskbar-range-val {
+    flex: 0 0 28px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    font-size: var(--font-size-12, 12px);
+    opacity: 0.8;
+}
+
+/* Pattern dropdown */
+.wc-taskbar-pattern-select {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+/* Controls block below preview. */
+.wc-theme-middle-controls {
+    flex: 0 0 auto;
+    width: min(420px, 100%);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+/* Export dialog */
+.wc-export-checklist {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.wc-export-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+}
+
+.wc-theme-save-row {
+    display: flex;
+    gap: 0;
+}
+
+.wc-theme-save-row input[type="text"] {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: var(--font-size-12, 12px);
+}
+
+.wc-theme-actions-row {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+
+.wc-theme-actions-row button,
+.wc-theme-delete-row button {
+    white-space: nowrap;
+    font-size: var(--font-size-12, 12px);
+    cursor: pointer;
+}
+
+.wc-theme-delete-row {
+    display: flex;
+}
+
+.wc-danger-btn {
+    color: var(--color-text-hyperlink, #e74c3c) !important;
+}
+
+/* Scrollable variable editor — full width below the middle section */
+.wc-theme-editor-scroll {
+    max-height: 340px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.wc-theme-group {
+    margin-bottom: 12px;
+}
+
+.wc-theme-group-label {
+    font-size: var(--font-size-13, 13px);
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    opacity: 0.7;
+    margin: 0 0 4px 0;
+    padding-bottom: 3px;
+    border-bottom: 1px solid var(--color-border-light-2, #555);
+}
+
+/* Editor table layout */
+.wc-theme-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.wc-theme-table tbody tr {
+    background: none !important;
+}
+
+.wc-theme-table tr + tr td {
+    padding-top: 4px;
+}
+
+.wc-te-label {
+    white-space: nowrap;
+    padding-right: 10px;
+    font-size: var(--font-size-12, 12px);
+    font-weight: bold;
+    width: 110px;
+    vertical-align: middle;
+}
+
+.wc-te-fields {
+    vertical-align: middle;
+}
+
+.wc-theme-row-color .wc-te-fields {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+}
+
+.wc-theme-row-color .wc-theme-color-input {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.wc-theme-row-shadow .wc-te-fields {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+}
+
+.wc-theme-shadow-offset {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.wc-theme-shadow-color-text {
+    flex: 0 0 72px !important;
+    width: 72px !important;
+    min-width: 0;
+}
+
+.wc-theme-percent-input {
+    flex: 0 0 38px !important;
+    width: 36px !important;
+    text-align: right;
+    min-width: 0;
+}
+
+/* Generic value inputs: used for font size/weight, text-stroke size, and shadow offset. */
+.wc-theme-value-input {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+/* Color text inputs: hex/rgb fields paired with color swatches. */
+.wc-theme-color-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-family: monospace;
+}
+
+/* Taskbar pattern size uses a compact fixed-width text box. */
+#wc-taskbar-pattern-size {
+    flex: 0 0 40px !important;
+    width: 40px !important;
+}
+
+/* Font size/weight fields for pinned and non-pinned taskbar button text. */
+.wc-theme-value-input[data-var="--wc-btn-font-size"],
+.wc-theme-value-input[data-var="--wc-btn-font-weight"],
+.wc-theme-value-input[data-var="--wc-btn-pinned-font-size"],
+.wc-theme-value-input[data-var="--wc-btn-pinned-font-weight"] {
+    flex: 0 0 120px !important;
+    width: 120px !important;
+}
+
+.wc-te-alpha-label {
+    font-size: var(--font-size-11, 11px);
+    opacity: 0.65;
+    flex-shrink: 0;
+}
+
+.wc-te-fields input[type="text"],
+.wc-te-fields select {
+    width: 100%;
+    box-sizing: border-box;
+    font-size: var(--font-size-12, 12px);
+}
+
+/* Stroke row: size field narrow + color field fills rest */
+.wc-theme-row-stroke .wc-te-fields {
+    display: flex;
+    gap: 4px;
+}
+
+.wc-theme-stroke-size {
+    flex: 0 0 52px !important;
+    width: 52px !important;
+    text-align: right;
+}
+
+.wc-theme-stroke-color-text {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.wc-te-swatch {
+    width: 30px;
+    padding-left: 4px;
+    vertical-align: middle;
+}
+
+.wc-theme-swatch {
+    width: 28px;
+    height: 26px;
+    padding: 0;
+    margin: 0;
+    cursor: pointer;
+    border-radius: 3px;
+    border: none;
 }

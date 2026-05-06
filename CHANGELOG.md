@@ -6,6 +6,41 @@ The format is based on Keep a Changelog, and this project aims to follow Semanti
 
 Note: The 13.x versions are the reworked Foundry VTT v13+ fork/modernization of the original module. 14.x versions target Foundry VTT v14.
 
+## [14.0.2.0]
+### Added
+- **Theme Manager**: Added a full Theme Manager in Module Settings for editing and previewing WCN visual variables (taskbar buttons, pinned buttons, header inject buttons, and taskbar appearance) in one place.
+- **Preset + custom theme system**:
+  - Added `themes.css` preset themes loaded at runtime.
+  - Added client-scoped custom theme storage (`wcCustomThemes`).
+  - Added import/export of custom themes using OS file dialogs (`wcn-themes.json`).
+- **Taskbar pattern engine**:
+  - Added taskbar pattern settings (pattern type, secondary color, opacity, size).
+  - Added standalone `taskbarPatterns.js` pattern registry (`WCN_PATTERNS`) loaded via `module.json` scripts.
+  - Added curated pattern list including **Herringbone**, **Seigaiha**, and **Dragon Scale**.
+- **Dragon Scale SVG pattern**: Added runtime-colored Dragon Scale pattern via inline SVG data URI with color placeholder injection.
+- **Button size setting**: Added client setting for header/taskbar control size (`Small 18px`, `Medium 20px`, `Large 24px`).
+- **Unsaved Theme draft workflow**:
+  - `Apply & Close` now writes a temporary custom entry named **Unsaved Theme**.
+  - Users can switch to another theme and back to Unsaved Theme during iterative edits.
+
+### Changed
+- **Theme application flow**:
+  - `Apply & Close` now applies current editor values immediately without requiring Save Custom.
+  - Theme Manager now favors draft workflow: edits can be tested first, then saved when ready.
+- **Theme Manager layout and field UX**:
+  - Reworked preview/controls arrangement for clearer top-to-bottom flow.
+  - Split editor text fields into dedicated input styles: value fields, color fields, and percent fields.
+  - Converted taskbar pattern size/opacity from sliders to text inputs.
+  - Updated labels and groups for clarity (for example, non-pinned vs pinned taskbar text groups).
+- **Taskbar button styling variables expanded**:
+  - Added non-pinned button background variable (`--wc-btn-bg`, default black at 40% alpha).
+  - Added pinned font-weight variable (`--wc-btn-pinned-font-weight`).
+
+### Fixed
+- **Custom theme save collisions**: Saving with an existing custom theme name now prompts for overwrite instead of silently creating duplicate copies.
+- **Theme Manager draft persistence**: Switching away from draft edits and back now reliably restores the unsaved draft via the temporary Unsaved Theme entry.
+- **Taskbar text styling reliability**: Improved stroke/shadow propagation for taskbar labels and preview rendering to better reflect configured text effects.
+
 ## [14.0.1.0]
 ### Added
 - **Disable Window Controls (client setting)**: A new per-user toggle (default: off) completely disables all WCN features for that client — no taskbar, no header buttons, no pinning, no single-instance enforcement. Minimize/maximize/close revert to Foundry defaults. GMs retain control over world-scoped settings; this only affects the individual user who enables it.
