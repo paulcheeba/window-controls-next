@@ -17,6 +17,7 @@ Dock a fixed taskbar above or below the Foundry canvas. It nudges the UI and can
 
 ### Taskbar Buttons
 Taskbar buttons are sorted (pinned first, then type, then title), show a tooltip with the full title, and support hover preview. When there are too many buttons, the taskbar button strip scrolls horizontally and shows a thin scrollbar.
+- Taskbar button height is configurable separately from window header button size.
 
 ### Minimize, Maximize & Default Size
 Header buttons (and the taskbar right-click menu) let you minimize a sheet instantly to a taskbar button, resize it to a configurable maximum size (default 60% × 80% of the canvas area), or snap it back to its configured default dimensions. Each button can be individually shown or hidden in module settings.
@@ -40,6 +41,10 @@ The Theme Manager (accessible from Module Settings) lets you customize the visua
 - **Apply & Close** applies your current edits immediately, even if you have not saved a custom theme yet.
 - Applied-but-unsaved edits are stored as a temporary **Unsaved Theme** draft so you can switch to another theme and back without losing your in-progress work.
 - If you Save Custom using a name that already exists, WCN prompts to overwrite instead of creating a duplicate.
+- **Custom SVG taskbar patterns** are managed in Theme Manager and are **GM-authoring only** (via Foundry FilePicker upload/browse).
+- In the Taskbar editor, the **Custom SVG** row sits directly after **Pattern** and before **Primary**.
+- Custom SVG recoloring is strict: **White = Primary**, **Black = Secondary**. Other colors are left unchanged and WCN shows a notice.
+- For best results use seamless black-and-white SVG tiles. Users can share SVGs in the Window Controls Next Discord channel.
 
 **Custom themes are stored locally in your browser.** They are not synced to the Foundry server, so they only exist in the browser where they were created. If you log in from a different browser or computer, your custom themes will not be there by default.
 
@@ -71,25 +76,28 @@ The taskbar can be set to Canvas width or Full width depending on your preferenc
 
 Settings are scoped so each user can control their own experience without affecting others. The scope of each setting is noted below.
 
+Settings are organized in Module Settings under **Taskbar**, **Window Controls**, **Pinning**, and **Theming**.
+
 | Setting | Scope | Notes |
 |---|---|---|
 | Disable Window Controls | **Client** | Completely disables all WCN features for this user only. |
 | Taskbar Location | **Client** | Top taskbar, bottom taskbar, or disabled. |
 | Taskbar Width | **Client** | Full width or canvas-only (stops at the sidebar edge). |
-| Button Size | **Client** | Sets header/taskbar control size (Small 18px, Medium 20px, Large 24px). |
+| Taskbar Button Height | **Client** | Sets taskbar button height independently from header controls (`22px`–`28px`). |
 | Taskbar Color | **Client** | Background color of the taskbar. |
 | Taskbar Scrollbar Color | **Client** | Color of the taskbar's horizontal scrollbar thumb. |
-| Enable Theming | **Client** | Enables/disables WCN theme variable application for this user. |
+| Button Size | **Client** | Sets window header control size only (Small 18px, Medium 20px, Large 24px). |
 | Minimize Button | **Client** | Show or hide the minimize header button. |
 | Default Size Button | **Client** | Show or hide the default size header button. |
 | Maximize Button | **Client** | Show or hide the maximize header button. |
 | Max Width (%) | **Client** | Width the window resizes to when maximized (10–100% of canvas). |
 | Max Height (%) | **Client** | Height the window resizes to when maximized (10–100% of canvas). |
-| Minimize Everything on Outside Click | **World** | Minimizes all windows when clicking the canvas board. |
 | Pinned Button | **Client** | Show or hide the pin header button. |
+| Remember Pinned Windows | **Client** | Restore pinned windows automatically on next session load. |
 | Pinned Header Color | **Client** | Header overlay color for pinned windows. |
 | Double ESC to minimize Pinned Windows | **World** | Requires ESC to be pressed twice to minimize a pinned window. |
-| Remember Pinned Windows | **Client** | Restore pinned windows automatically on next session load. |
+| Minimize Everything on Outside Click | **World** | Minimizes all windows when clicking the canvas board. |
+| Enable Theming | **Client** | Enables/disables WCN theme variable application for this user. |
 | Enable Debugging | **Client** *(GM only)* | Enables verbose debug logging to the browser console. |
 | Verbose Debug Logs | **Client** *(GM only)* | Logs every internal method call (very noisy). |
 

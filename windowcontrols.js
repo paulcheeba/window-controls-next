@@ -51,6 +51,9 @@ class WindowControls {
   static _lastLoggedTaskbarState = null;
   static _shownAppV1Warning = false;
   static _sidebarResizeObserver = null;
+  static _taskbarPatternApplyNonce = 0;
+  static _customSvgSourceCache = new Map();
+  static _customSvgNoticeCache = new Set();
 
   // Session-only marker used by Theme Manager to remind users that current edits
   // were applied without being saved as a named custom theme.
@@ -2068,6 +2071,24 @@ class WindowControls {
       default: "persistentTop",
       onChange: WindowControls.debouncedReload
     });
+    // To add or change dropdown sizes, update these labels and _setButtonSize below.
+    // Values map to a fixed px size so existing user selections remain stable.
+    game.settings.register(WindowControls.MODULE_ID, 'buttonSize', {
+      name: game.i18n.localize('WindowControls.ButtonSizeName'),
+      hint: game.i18n.localize('WindowControls.ButtonSizeHint'),
+      scope: 'client',
+      config: true,
+      type: String,
+      choices: {
+        small: game.i18n.localize('WindowControls.ButtonSizeSmall'),
+        medium: game.i18n.localize('WindowControls.ButtonSizeMedium'),
+        large: game.i18n.localize('WindowControls.ButtonSizeLarge')
+      },
+      default: 'large',
+      onChange: () => {
+        WindowControls._applyButtonSizeFromSetting();
+      }
+    });
     game.settings.register(WindowControls.MODULE_ID, 'minimizeButton', {
       name: game.i18n.localize("WindowControls.MinimizeButtonName"),
       hint: game.i18n.localize("WindowControls.MinimizeButtonHint"),
@@ -2119,24 +2140,6 @@ class WindowControls {
       },
       default: "enabled",
       onChange: WindowControls.debouncedReload
-    });
-    // To add or change dropdown sizes, update these labels and _setButtonSize below.
-    // Values map to a fixed px size so existing user selections remain stable.
-    game.settings.register(WindowControls.MODULE_ID, 'buttonSize', {
-      name: game.i18n.localize('WindowControls.ButtonSizeName'),
-      hint: game.i18n.localize('WindowControls.ButtonSizeHint'),
-      scope: 'client',
-      config: true,
-      type: String,
-      choices: {
-        small: game.i18n.localize('WindowControls.ButtonSizeSmall'),
-        medium: game.i18n.localize('WindowControls.ButtonSizeMedium'),
-        large: game.i18n.localize('WindowControls.ButtonSizeLarge')
-      },
-      default: 'large',
-      onChange: () => {
-        WindowControls._applyButtonSizeFromSetting();
-      }
     });
     game.settings.register(WindowControls.MODULE_ID, 'clickOutsideMinimize', {
       name: game.i18n.localize("WindowControls.ClickOutsideMinimizeName"),
@@ -2219,6 +2222,10 @@ class WindowControls {
       scope: 'client', config: false, type: Number, default: 4,
       onChange: () => WindowControls._applyTaskbarPatternFromSettings()
     });
+    game.settings.register(WindowControls.MODULE_ID, 'taskbarPatternCustomSvgPath', {
+      scope: 'client', config: false, type: String, default: '',
+      onChange: () => WindowControls._applyTaskbarPatternFromSettings()
+    });
 
     game.settings.register(WindowControls.MODULE_ID, 'taskbarWidth', {
       name: game.i18n.localize("WindowControls.TaskbarWidthName"),
@@ -2234,6 +2241,26 @@ class WindowControls {
       requiresReload: true,
       onChange: () => {
         WindowControls._applyTaskbarWidthFromSetting();
+      }
+    });
+    game.settings.register(WindowControls.MODULE_ID, 'taskbarButtonHeight', {
+      name: game.i18n.localize('WindowControls.TaskbarButtonHeightName'),
+      hint: game.i18n.localize('WindowControls.TaskbarButtonHeightHint'),
+      scope: 'client',
+      config: true,
+      type: String,
+      choices: {
+        '22': '22px',
+        '23': '23px',
+        '24': '24px',
+        '25': '25px',
+        '26': '26px',
+        '27': '27px',
+        '28': '28px'
+      },
+      default: '28',
+      onChange: () => {
+        WindowControls._applyTaskbarButtonHeightFromSetting();
       }
     });
 
@@ -2458,6 +2485,7 @@ class WindowControls {
       WindowControls._applyPinnedHeaderColorFromSetting();
       WindowControls._applyButtonSizeFromSetting();
       WindowControls._applyTaskbarWidthFromSetting();
+      WindowControls._applyTaskbarButtonHeightFromSetting();
 
       // Load preset theme definitions then apply the active theme.
       await WindowControls._loadThemesFromCSS();
@@ -2687,7 +2715,7 @@ class WindowControls {
     if (bar) bar.style.removeProperty('background-color');
   }
 
-  // Sets the shared button size variable used by header controls and taskbar buttons.
+  // Sets the header control button size variable.
   // To add more dropdown options, keep this map synchronized with the buttonSize choices.
   static _setButtonSize(sizeKey) {
     const pxByKey = {
@@ -2705,6 +2733,24 @@ class WindowControls {
     try {
       const key = game?.settings?.get(WindowControls.MODULE_ID, 'buttonSize') ?? 'large';
       WindowControls._setButtonSize(key);
+    } catch (e) {
+      // Ignore (e.g. before game/settings available).
+    }
+  }
+
+  // Sets the taskbar button height CSS variable.
+  static _setTaskbarButtonHeight(heightValue) {
+    const px = Number.parseInt(heightValue, 10);
+    const clampedPx = Number.isFinite(px) ? Math.min(28, Math.max(22, px)) : 28;
+    const rootStyle = document.documentElement?.style;
+    if (rootStyle) rootStyle.setProperty('--wc-taskbar-btn-height', `${clampedPx}px`);
+  }
+
+  // Reads the taskbarButtonHeight setting and applies the CSS variable (called once at startup).
+  static _applyTaskbarButtonHeightFromSetting() {
+    try {
+      const value = game?.settings?.get(WindowControls.MODULE_ID, 'taskbarButtonHeight') ?? '28';
+      WindowControls._setTaskbarButtonHeight(value);
     } catch (e) {
       // Ignore (e.g. before game/settings available).
     }
@@ -2817,6 +2863,142 @@ class WindowControls {
     return WCN_PATTERNS.list;
   }
 
+  static _isCustomSvgPatternKey(key) {
+    return String(key ?? '').trim() === 'custom-svg';
+  }
+
+  static _isLikelySvgPath(path) {
+    const p = String(path ?? '').trim();
+    if (!p) return false;
+    // Accept .svg with optional query/hash suffixes.
+    return /\.svg(?:$|[?#])/i.test(p);
+  }
+
+  static _classifyStrictBWColorToken(token) {
+    const raw = String(token ?? '').trim();
+    if (!raw) return { kind: 'ignore', token: raw };
+    const compact = raw.toLowerCase().replace(/\s+/g, '');
+
+    if (
+      compact === 'none' ||
+      compact === 'transparent' ||
+      compact === 'inherit' ||
+      compact === 'currentcolor' ||
+      compact === 'unset' ||
+      compact === 'initial' ||
+      compact.startsWith('url(') ||
+      compact.startsWith('var(')
+    ) {
+      return { kind: 'ignore', token: raw };
+    }
+
+    if (compact === 'white' || compact === '#fff' || compact === '#ffffff' || compact === 'rgb(255,255,255)' || compact === 'rgba(255,255,255,1)' || compact === 'rgba(255,255,255,1.0)') {
+      return { kind: 'white', token: raw };
+    }
+    if (compact === 'black' || compact === '#000' || compact === '#000000' || compact === 'rgb(0,0,0)' || compact === 'rgba(0,0,0,1)' || compact === 'rgba(0,0,0,1.0)') {
+      return { kind: 'black', token: raw };
+    }
+
+    // Any explicit color token that is not strict black/white remains unchanged.
+    if (/^#[0-9a-f]{3,8}$/i.test(compact) || /^rgba?\(/i.test(compact) || /^[a-z-]+$/i.test(compact)) {
+      return { kind: 'other-color', token: raw };
+    }
+
+    return { kind: 'ignore', token: raw };
+  }
+
+  static _mapStrictBWColorToken(token, primaryHex, secondaryHex) {
+    const classified = WindowControls._classifyStrictBWColorToken(token);
+    if (classified.kind === 'white') return { value: primaryHex, hadOtherColor: false };
+    if (classified.kind === 'black') return { value: secondaryHex, hadOtherColor: false };
+    if (classified.kind === 'other-color') return { value: token, hadOtherColor: true };
+    return { value: token, hadOtherColor: false };
+  }
+
+  static _recolorSvgStrictBW(svgText, primaryHex, secondaryHex) {
+    const parser = new DOMParser();
+    const xml = parser.parseFromString(svgText, 'image/svg+xml');
+    if (xml.querySelector('parsererror')) {
+      throw new Error('Invalid SVG data.');
+    }
+
+    let hadOtherColors = false;
+    const colorAttrs = ['fill', 'stroke', 'stop-color', 'color'];
+
+    xml.querySelectorAll('*').forEach((el) => {
+      for (const attr of colorAttrs) {
+        if (!el.hasAttribute(attr)) continue;
+        const original = el.getAttribute(attr) ?? '';
+        const mapped = WindowControls._mapStrictBWColorToken(original, primaryHex, secondaryHex);
+        if (mapped.hadOtherColor) hadOtherColors = true;
+        el.setAttribute(attr, String(mapped.value ?? original));
+      }
+
+      if (!el.hasAttribute('style')) return;
+      const styleRaw = el.getAttribute('style') ?? '';
+      const styleParts = styleRaw.split(';');
+      const rewritten = styleParts.map((part) => {
+        const idx = part.indexOf(':');
+        if (idx < 0) return part;
+        const prop = part.slice(0, idx).trim().toLowerCase();
+        const value = part.slice(idx + 1).trim();
+        if (!['fill', 'stroke', 'stop-color', 'color'].includes(prop)) return part;
+        const mapped = WindowControls._mapStrictBWColorToken(value, primaryHex, secondaryHex);
+        if (mapped.hadOtherColor) hadOtherColors = true;
+        return `${prop}: ${mapped.value}`;
+      }).join(';');
+      el.setAttribute('style', rewritten);
+    });
+
+    const serializer = new XMLSerializer();
+    const svgRoot = xml.documentElement;
+    if (!svgRoot || svgRoot.nodeName.toLowerCase() !== 'svg') {
+      throw new Error('Selected file is not a valid SVG document.');
+    }
+
+    return {
+      svgText: serializer.serializeToString(svgRoot),
+      hadOtherColors,
+    };
+  }
+
+  static async _loadSvgTextFromPath(svgPath) {
+    const path = String(svgPath ?? '').trim();
+    if (!WindowControls._isLikelySvgPath(path)) {
+      throw new Error('Please select an .svg file.');
+    }
+    if (WindowControls._customSvgSourceCache.has(path)) {
+      return WindowControls._customSvgSourceCache.get(path);
+    }
+    const response = await fetch(path, { cache: 'no-store' });
+    if (!response.ok) {
+      throw new Error(`Unable to load SVG (${response.status}).`);
+    }
+    const text = await response.text();
+    if (!/<svg[\s>]/i.test(text)) {
+      throw new Error('The selected file does not contain SVG markup.');
+    }
+    WindowControls._customSvgSourceCache.set(path, text);
+    return text;
+  }
+
+  static async _buildCustomSvgPatternCSS(svgPath, primaryHex, secondaryHex, sizePx, { notify = false } = {}) {
+    const rawSvg = await WindowControls._loadSvgTextFromPath(svgPath);
+    const recolored = WindowControls._recolorSvgStrictBW(rawSvg, primaryHex, secondaryHex);
+    const tile = Math.max(2, Math.min(128, parseInt(sizePx, 10) || 8));
+    if (notify && recolored.hadOtherColors) {
+      const noticeKey = `${svgPath}|other-colors`;
+      if (!WindowControls._customSvgNoticeCache.has(noticeKey)) {
+        WindowControls._customSvgNoticeCache.add(noticeKey);
+        ui?.notifications?.info?.('Window Controls: Non-black/white SVG colors were left unchanged. Only white and black are remapped.');
+      }
+    }
+    return {
+      image: `url("data:image/svg+xml,${encodeURIComponent(recolored.svgText)}")`,
+      size: `${tile}px ${tile}px`,
+    };
+  }
+
   // Delegates to the WCN_PATTERNS global defined in taskbarPatterns.js.
   // hexColor: Secondary color '#rrggbb' (pattern lines), sizePx: tile size in pixels.
   // bgHexColor: Primary color '#rrggbb' (scale body fill — used by seigaiha).
@@ -2828,8 +3010,8 @@ class WindowControls {
   // Injects a <style> element to apply the chosen pattern to the real taskbar ::before.
   // opacityPct (0–100) is applied as element-level opacity so both back and front colors
   // remain solid (no alpha blending between them).
-  static _setTaskbarPattern(key, hexColor, opacityPct, sizePx, bgHexColor) {
-    const css = WindowControls._taskbarPatternCSS(key, hexColor, sizePx, bgHexColor);
+  static async _setTaskbarPattern(key, hexColor, opacityPct, sizePx, bgHexColor, { svgPath = '', notify = false, nonce = null } = {}) {
+    let css = null;
     let styleEl = document.getElementById('wc-taskbar-pattern-style');
     if (!styleEl) {
       styleEl = document.createElement('style');
@@ -2838,6 +3020,26 @@ class WindowControls {
     }
     const opVal = Math.max(0, Math.min(1, (opacityPct ?? 80) / 100)).toFixed(2);
     const clearAfter = `#window-controls-persistent::after { content: none; }`;
+
+    if (WindowControls._isCustomSvgPatternKey(key)) {
+      const customPath = String(svgPath ?? '').trim();
+      if (!customPath) {
+        if (notify) ui?.notifications?.warn?.('Window Controls: Select a custom SVG file first.');
+        styleEl.textContent = `#window-controls-persistent::before { background-image: none; opacity: ${opVal}; }\n${clearAfter}`;
+        return;
+      }
+      try {
+        css = await WindowControls._buildCustomSvgPatternCSS(customPath, bgHexColor, hexColor, sizePx, { notify });
+      } catch (e) {
+        if (notify) ui?.notifications?.warn?.('Window Controls: Custom SVG pattern could not be loaded. ' + e.message);
+        styleEl.textContent = `#window-controls-persistent::before { background-image: none; opacity: ${opVal}; }\n${clearAfter}`;
+        return;
+      }
+    } else {
+      css = WindowControls._taskbarPatternCSS(key, hexColor, sizePx, bgHexColor);
+    }
+
+    if (nonce != null && nonce !== WindowControls._taskbarPatternApplyNonce) return;
 
     if (!css || css.image === 'none') {
       styleEl.textContent = `#window-controls-persistent::before { background-image: none; opacity: ${opVal}; }\n${clearAfter}`;
@@ -2849,15 +3051,17 @@ class WindowControls {
   }
 
   // Reads the four pattern settings and applies the pattern to the real taskbar.
-  static _applyTaskbarPatternFromSettings() {
+  static async _applyTaskbarPatternFromSettings({ notify = false } = {}) {
     try {
+      const nonce = ++WindowControls._taskbarPatternApplyNonce;
       const key     = game?.settings?.get(WindowControls.MODULE_ID, 'taskbarPattern')        ?? 'diagonal';
       const color   = game?.settings?.get(WindowControls.MODULE_ID, 'taskbarPatternColor')   ?? '#000000';
       const opacity = game?.settings?.get(WindowControls.MODULE_ID, 'taskbarPatternOpacity') ?? 80;
       const size    = game?.settings?.get(WindowControls.MODULE_ID, 'taskbarPatternSize')    ?? 4;
+      const svgPath = game?.settings?.get(WindowControls.MODULE_ID, 'taskbarPatternCustomSvgPath') ?? '';
       const rawBg   = game?.settings?.get(WindowControls.MODULE_ID, 'taskbarColor')          ?? '#808080';
       const bgHex   = WindowControls._cssColorToHex(rawBg);
-      WindowControls._setTaskbarPattern(key, color, opacity, size, bgHex);
+      await WindowControls._setTaskbarPattern(key, color, opacity, size, bgHex, { svgPath, notify, nonce });
     } catch (e) {
       // Ignore (e.g. before game/settings available).
     }
@@ -3014,7 +3218,7 @@ class WindowControls {
 
   // Builds the Taskbar section HTML for the Theme Manager.
   // Uses dedicated classes (wc-taskbar-*) so it stays independent of the theme var system.
-  static _buildTaskbarEditorRows(taskbarColor, scrollbarColor, patternKey, patternColor, patternOpacity, patternSize) {
+  static _buildTaskbarEditorRows(taskbarColor, scrollbarColor, patternKey, patternColor, patternOpacity, patternSize, patternSvgPath, isGM) {
     const tbHex   = WindowControls._cssColorToHex(taskbarColor   || '#0000');
     const tbAlpha = WindowControls._extractColorAlpha(taskbarColor || '#0000');
     const scHex   = WindowControls._cssColorToHex(scrollbarColor || '#000000');
@@ -3024,10 +3228,34 @@ class WindowControls {
     const pKey  = patternKey ?? 'diagonal';
     const pOpac   = patternOpacity ?? 80;
     const pSize   = patternSize    ?? 4;
+    const svgPath = String(patternSvgPath ?? '').trim();
+    const includeCustomSvgOption = isGM || WindowControls._isCustomSvgPatternKey(pKey);
 
-    const patternOptions = WindowControls.TASKBAR_PATTERNS
+    const patterns = [...WindowControls.TASKBAR_PATTERNS];
+    if (includeCustomSvgOption && !patterns.some((p) => p.key === 'custom-svg')) {
+      patterns.push({ key: 'custom-svg', label: 'Custom SVG (GM)' });
+    }
+
+    const patternOptions = patterns
       .map(p => `<option value="${p.key}"${p.key === pKey ? ' selected' : ''}>${p.label}</option>`)
       .join('');
+
+    const svgHint = 'GMs only: Only black and white SVGs are supported. White = Primary color, Black = Secondary color. Seamless tiling patterns work best.';
+
+    const customSvgRow = includeCustomSvgOption ? `
+      <tr class="wc-theme-row" id="wc-taskbar-custom-svg-row" style="display:${WindowControls._isCustomSvgPatternKey(pKey) ? '' : 'none'};">
+        <td class="wc-te-label" title="${svgHint}">Custom SVG</td>
+        <td class="wc-te-fields" colspan="2">
+          <div class="wc-taskbar-svg-controls">
+            <input type="text" id="wc-taskbar-svg-path-display" class="wc-theme-value-input" value="${foundry.utils.escapeHTML(svgPath)}" placeholder="Select SVG file..." readonly>
+            <input type="hidden" id="wc-taskbar-svg-path" value="${foundry.utils.escapeHTML(svgPath)}">
+            ${isGM ? '<button type="button" id="wc-taskbar-svg-browse" class="wc-taskbar-svg-btn"><i class="fas fa-folder-open"></i> Browse</button>' : ''}
+            ${isGM ? '<button type="button" id="wc-taskbar-svg-clear" class="wc-taskbar-svg-btn"><i class="fas fa-xmark"></i> Clear</button>' : ''}
+          </div>
+          <p class="wc-taskbar-svg-hint" title="${svgHint}">${svgHint}</p>
+          <p class="wc-taskbar-svg-hint">Users can share their SVGs in the Window Controls Next Discord channel.</p>
+        </td>
+      </tr>` : '';
 
     return `
       <div class="wc-theme-group">
@@ -3039,6 +3267,7 @@ class WindowControls {
               <select id="wc-taskbar-pattern" class="wc-taskbar-pattern-select">${patternOptions}</select>
             </td>
           </tr>
+          ${customSvgRow}
           <tr class="wc-theme-row wc-theme-row-color">
             <td class="wc-te-label">Primary</td>
             <td class="wc-te-fields">
@@ -3348,6 +3577,7 @@ class WindowControls {
 
     const pcHex  = dialogEl.querySelector('#wc-taskbar-pattern-color-text')?.value?.trim() || '#000000';
     const pcBase = /^#[0-9a-f]{6}$/i.test(pcHex) ? pcHex : WindowControls._cssColorToHex(pcHex);
+    const svgPath = dialogEl.querySelector('#wc-taskbar-svg-path')?.value?.trim() || '';
 
     return {
       color:          tbAA ? tbBase + tbAA : tbBase,
@@ -3356,6 +3586,7 @@ class WindowControls {
       patternColor:   pcBase,
       patternOpacity: parseInt(dialogEl.querySelector('#wc-taskbar-pattern-opacity')?.value) || 80,
       patternSize:    parseInt(dialogEl.querySelector('#wc-taskbar-pattern-size')?.value) || 4,
+      patternSvgPath: svgPath,
     };
   }
 
@@ -3366,6 +3597,7 @@ class WindowControls {
     const scBase  = taskbar.scrollbarColor ? WindowControls._cssColorToHex(taskbar.scrollbarColor) : '';
     const scAlpha = taskbar.scrollbarColor ? WindowControls._extractColorAlpha(taskbar.scrollbarColor) : '100';
     const pcBase  = taskbar.patternColor || '#000000';
+    const svgPath = String(taskbar.patternSvgPath || '').trim();
 
     const set = (id, val) => { const el = dialogEl.querySelector(`#${id}`); if (el) el.value = val; };
     set('wc-taskbar-color-text',          tbBase);
@@ -3377,6 +3609,8 @@ class WindowControls {
     set('wc-taskbar-pattern',             taskbar.pattern || 'diagonal');
     set('wc-taskbar-pattern-color-text',  pcBase);
     set('wc-taskbar-pattern-color-swatch', pcBase);
+    set('wc-taskbar-svg-path',            svgPath);
+    set('wc-taskbar-svg-path-display',    svgPath);
 
     const opacityEl = dialogEl.querySelector('#wc-taskbar-pattern-opacity');
     if (opacityEl) {
@@ -3468,8 +3702,8 @@ class WindowControls {
       const patHex   = dialogEl.querySelector('#wc-taskbar-pattern-color-text')?.value?.trim() || '#000000';
       const patOpac  = parseInt(dialogEl.querySelector('#wc-taskbar-pattern-opacity')?.value) || 80;
       const patSize  = parseInt(dialogEl.querySelector('#wc-taskbar-pattern-size')?.value) || 4;
+      const patSvgPath = dialogEl.querySelector('#wc-taskbar-svg-path')?.value?.trim() || '';
       const patBgHex = /^#[0-9a-f]{6}$/i.test(base) ? base : WindowControls._cssColorToHex(base);
-      const patCSS   = WindowControls._taskbarPatternCSS(patKey, patHex, patSize, patBgHex);
       const opVal    = (Math.max(0, Math.min(100, patOpac)) / 100).toFixed(2);
       // Reset before applying.
       previewTaskbar.style.backgroundImage    = '';
@@ -3482,11 +3716,28 @@ class WindowControls {
       previewTaskbar.style.webkitMaskRepeat   = '';
       previewTaskbar.style.maskRepeat         = '';
       previewTaskbar.style.opacity            = '1';
-      if (patCSS && patCSS.image !== 'none') {
-        previewTaskbar.style.backgroundImage    = patCSS.image;
-        previewTaskbar.style.backgroundSize     = patCSS.size;
-        previewTaskbar.style.backgroundPosition = patCSS.position || '0 0';
-        previewTaskbar.style.opacity            = opVal;
+      if (WindowControls._isCustomSvgPatternKey(patKey)) {
+        if (patSvgPath) {
+          void (async () => {
+            try {
+              const custom = await WindowControls._buildCustomSvgPatternCSS(patSvgPath, patBgHex, patHex, patSize, { notify: false });
+              previewTaskbar.style.backgroundImage = custom.image;
+              previewTaskbar.style.backgroundSize = custom.size;
+              previewTaskbar.style.backgroundPosition = '0 0';
+              previewTaskbar.style.opacity = opVal;
+            } catch {
+              previewTaskbar.style.backgroundImage = 'none';
+            }
+          })();
+        }
+      } else {
+        const patCSS = WindowControls._taskbarPatternCSS(patKey, patHex, patSize, patBgHex);
+        if (patCSS && patCSS.image !== 'none') {
+          previewTaskbar.style.backgroundImage    = patCSS.image;
+          previewTaskbar.style.backgroundSize     = patCSS.size;
+          previewTaskbar.style.backgroundPosition = patCSS.position || '0 0';
+          previewTaskbar.style.opacity            = opVal;
+        }
       }
     }
   }
@@ -3679,13 +3930,15 @@ class WindowControls {
     let patternColorVal = '#000000';
     let patternOpacityVal = 80;
     let patternSizeVal = 4;
+    let patternSvgPathVal = '';
     try { taskbarColorVal    = game.settings.get(WindowControls.MODULE_ID, 'taskbarColor')          ?? '#0000'; } catch {}
     try { scrollbarColorVal  = game.settings.get(WindowControls.MODULE_ID, 'taskbarScrollbarColor') ?? ''; } catch {}
     try { patternKeyVal      = game.settings.get(WindowControls.MODULE_ID, 'taskbarPattern')        ?? 'diagonal'; } catch {}
     try { patternColorVal    = game.settings.get(WindowControls.MODULE_ID, 'taskbarPatternColor')   ?? '#000000'; } catch {}
     try { patternOpacityVal  = game.settings.get(WindowControls.MODULE_ID, 'taskbarPatternOpacity') ?? 80; } catch {}
     try { patternSizeVal     = game.settings.get(WindowControls.MODULE_ID, 'taskbarPatternSize')    ?? 4; } catch {}
-    const taskbarRows = WindowControls._buildTaskbarEditorRows(taskbarColorVal, scrollbarColorVal, patternKeyVal, patternColorVal, patternOpacityVal, patternSizeVal);
+    try { patternSvgPathVal  = game.settings.get(WindowControls.MODULE_ID, 'taskbarPatternCustomSvgPath') ?? ''; } catch {}
+    const taskbarRows = WindowControls._buildTaskbarEditorRows(taskbarColorVal, scrollbarColorVal, patternKeyVal, patternColorVal, patternOpacityVal, patternSizeVal, patternSvgPathVal, isGM);
 
     const content = `
       <div class="wc-theme-manager">
@@ -3742,6 +3995,36 @@ class WindowControls {
       ],
       render: (event, dialog) => {
         const el = dialog.element;
+
+        const syncCustomSvgRowVisibility = () => {
+          const pattern = el.querySelector('#wc-taskbar-pattern')?.value || 'diagonal';
+          const row = el.querySelector('#wc-taskbar-custom-svg-row');
+          if (!row) return;
+          row.style.display = WindowControls._isCustomSvgPatternKey(pattern) ? '' : 'none';
+        };
+
+        const applySvgPathToDialog = async (pickedPath) => {
+          const svgPath = String(pickedPath ?? '').trim();
+          if (!svgPath) return;
+          if (!WindowControls._isLikelySvgPath(svgPath)) {
+            ui?.notifications?.warn?.('Window Controls: Please select an SVG file.');
+            return;
+          }
+          try {
+            await WindowControls._loadSvgTextFromPath(svgPath);
+          } catch (e) {
+            ui?.notifications?.warn?.('Window Controls: Could not read SVG file. ' + e.message);
+            return;
+          }
+          const hidden = el.querySelector('#wc-taskbar-svg-path');
+          const display = el.querySelector('#wc-taskbar-svg-path-display');
+          if (hidden) hidden.value = svgPath;
+          if (display) display.value = svgPath;
+          const patternSel = el.querySelector('#wc-taskbar-pattern');
+          if (patternSel) patternSel.value = 'custom-svg';
+          syncCustomSvgRowVisibility();
+          WindowControls._updateThemePreview(el);
+        };
 
         // Live preview on any input/change event.
         el.addEventListener('input', (e) => {
@@ -3823,6 +4106,7 @@ class WindowControls {
             WindowControls._updateThemePreview(el);
           }
           if (e.target.id === 'wc-taskbar-pattern') {
+            syncCustomSvgRowVisibility();
             WindowControls._updateThemePreview(el);
           }
         });
@@ -3921,11 +4205,50 @@ class WindowControls {
 
             // If this custom theme has stored taskbar settings, populate the taskbar panel.
             const storedTaskbar = customThemes[selectedId]?.taskbar;
+            if (storedTaskbar?.pattern === 'custom-svg') {
+              const patSel = el.querySelector('#wc-taskbar-pattern');
+              if (patSel && ![...patSel.options].some((o) => o.value === 'custom-svg')) {
+                const opt = document.createElement('option');
+                opt.value = 'custom-svg';
+                opt.textContent = 'Custom SVG (GM)';
+                patSel.appendChild(opt);
+              }
+            }
             if (storedTaskbar) WindowControls._populateTaskbarFields(el, storedTaskbar);
 
+            syncCustomSvgRowVisibility();
             WindowControls._updateThemePreview(el);
           });
         }
+
+        // GM-only SVG picker controls.
+        el.querySelector('#wc-taskbar-svg-browse')?.addEventListener('click', () => {
+          if (!isGM) return;
+          const Picker = foundry?.applications?.apps?.FilePicker ?? globalThis.FilePicker;
+          if (!Picker) {
+            ui?.notifications?.warn?.('Window Controls: FilePicker not available in this Foundry version.');
+            return;
+          }
+          const currentPath = el.querySelector('#wc-taskbar-svg-path')?.value?.trim() || '';
+          const picker = new Picker({
+            type: 'image',
+            current: currentPath,
+            callback: (path) => { void applySvgPathToDialog(path); }
+          });
+          picker.render(true);
+        });
+
+        el.querySelector('#wc-taskbar-svg-clear')?.addEventListener('click', () => {
+          if (!isGM) return;
+          const hidden = el.querySelector('#wc-taskbar-svg-path');
+          const display = el.querySelector('#wc-taskbar-svg-path-display');
+          if (hidden) hidden.value = '';
+          if (display) display.value = '';
+          const patternSel = el.querySelector('#wc-taskbar-pattern');
+          if (patternSel && patternSel.value === 'custom-svg') patternSel.value = 'diagonal';
+          syncCustomSvgRowVisibility();
+          WindowControls._updateThemePreview(el);
+        });
 
         // Save as custom theme.
         el.querySelector('#wc-save-custom-btn')?.addEventListener('click', async () => {
@@ -4029,6 +4352,7 @@ class WindowControls {
         });
 
         // Init preview on open.
+        syncCustomSvgRowVisibility();
         WindowControls._updateThemePreview(el);
       }
     });
@@ -4081,11 +4405,23 @@ class WindowControls {
     // Save taskbar pattern settings.
     const patSelect = dialogEl.querySelector('#wc-taskbar-pattern');
     const patColorText  = dialogEl.querySelector('#wc-taskbar-pattern-color-text');
-    const patColorAlpha = dialogEl.querySelector('#wc-taskbar-pattern-color-alpha');
     const patOpacityEl  = dialogEl.querySelector('#wc-taskbar-pattern-opacity');
     const patSizeEl     = dialogEl.querySelector('#wc-taskbar-pattern-size');
+    const patSvgPathEl  = dialogEl.querySelector('#wc-taskbar-svg-path');
+    const selectedPattern = patSelect?.value || 'diagonal';
+    const selectedSvgPath = String(patSvgPathEl?.value ?? '').trim();
+
+    if (WindowControls._isCustomSvgPatternKey(selectedPattern) && !selectedSvgPath) {
+      ui?.notifications?.warn?.('Window Controls: Select a custom SVG file before applying.');
+      return;
+    }
+    if (WindowControls._isCustomSvgPatternKey(selectedPattern) && !WindowControls._isLikelySvgPath(selectedSvgPath)) {
+      ui?.notifications?.warn?.('Window Controls: Please select an SVG file.');
+      return;
+    }
+
     if (patSelect) {
-      try { await game.settings.set(WindowControls.MODULE_ID, 'taskbarPattern', patSelect.value || 'diagonal'); } catch {}
+      try { await game.settings.set(WindowControls.MODULE_ID, 'taskbarPattern', selectedPattern); } catch {}
     }
     if (patColorText) {
       const hex  = patColorText.value.trim() || '#000000';
@@ -4097,6 +4433,15 @@ class WindowControls {
     }
     if (patSizeEl) {
       try { await game.settings.set(WindowControls.MODULE_ID, 'taskbarPatternSize', parseInt(patSizeEl.value) || 4); } catch {}
+    }
+    if (patSvgPathEl) {
+      try {
+        await game.settings.set(
+          WindowControls.MODULE_ID,
+          'taskbarPatternCustomSvgPath',
+          WindowControls._isCustomSvgPatternKey(selectedPattern) ? selectedSvgPath : ''
+        );
+      } catch {}
     }
 
     if (selectedId !== UNSAVED_THEME_ID) {
@@ -4151,7 +4496,7 @@ class WindowControls {
     // Ensure immediate visual sync without requiring a full page reload.
     WindowControls._applyTaskbarColorFromSetting();
     WindowControls._applyTaskbarScrollbarColorFromSetting();
-    WindowControls._applyTaskbarPatternFromSettings();
+    await WindowControls._applyTaskbarPatternFromSettings({ notify: true });
 
     // Mark session as unsaved so the Theme Manager shows an explicit reminder option.
     WindowControls._themeUnsavedPending = true;
@@ -4333,7 +4678,7 @@ class WindowControls {
     await game.settings.set(WindowControls.MODULE_ID, 'learnedSheetDefaults', { ...cur, [sheetName]: { width: w, height: h } });
   }
 
-  // Reorganizes the WCN section in the Foundry Settings UI into Taskbar and Pinning groups with headers.
+  // Reorganizes the WCN section in the Foundry Settings UI into grouped sections with headers.
   static _organizeSettingsConfig(html) {
     if (!html) return;
 
@@ -4359,11 +4704,13 @@ class WindowControls {
     // Remove previous injected headers and GM-only buttons if SettingsConfig re-renders.
     moduleRoot.find('.wc-settings-header, .wc-settings-btn-group').remove();
 
-    const taskbarKeys = ['organizedMinimize', 'taskbarWidth', 'minimizeButton', 'defaultSizeButton', 'maximizeButton', 'maximizeWidth', 'maximizeHeight', 'clickOutsideMinimize', 'debugLogging', 'debugVerbose'];
+    const taskbarKeys = ['organizedMinimize', 'taskbarWidth', 'taskbarButtonHeight', 'clickOutsideMinimize', 'debugLogging', 'debugVerbose'];
+    const windowControlsKeys = ['buttonSize', 'minimizeButton', 'defaultSizeButton', 'maximizeButton', 'maximizeWidth', 'maximizeHeight'];
     const pinningKeys = ['pinnedButton', 'pinnedDoubleTapping', 'rememberPinnedWindows'];
     const themingKeys = ['wcThemeEnabled'];
 
     const taskbarHeader = $('<h3 class="wc-settings-header">Taskbar</h3>');
+    const windowControlsHeader = $('<h3 class="wc-settings-header">Window Controls</h3>');
     const pinningHeader = $('<h3 class="wc-settings-header">Pinning</h3>');
     const themingHeader = $('<h3 class="wc-settings-header">Theming</h3>');
 
@@ -4377,7 +4724,14 @@ class WindowControls {
       const g = getGroup(key);
       if (g?.length) {
         moduleRoot.append(g);
-        // Inject the "Sheet Defaults" button row immediately after the Default Size toggle, GM only.
+      }
+    }
+
+    moduleRoot.append(windowControlsHeader);
+    for (const key of windowControlsKeys) {
+      const g = getGroup(key);
+      if (g?.length) {
+        moduleRoot.append(g);
         if (key === 'defaultSizeButton' && game.user?.isGM) {
           const $btn = $(`
             <div class="form-group wc-settings-btn-group">

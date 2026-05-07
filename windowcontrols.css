@@ -9,6 +9,7 @@
     --minimaxh: unset;
     --taskbarcolor: #0000;
     --wc-taskbar-height: 40px;
+    --wc-taskbar-btn-height: 28px;
     --wc-sidebar-width: 0px;
     --wc-control-btn-size: 24px;
 
@@ -218,12 +219,19 @@ body.wc-taskbar-canvas-only {
 
 /* ── Taskbar Buttons ─────────────────────────────────────────────────────── */
 #window-controls-persistent .wc-taskbar-btn {
-    --button-size: var(--wc-control-btn-size, 24px);
     display: inline-flex;
+    flex: 0 0 auto;
     align-items: center;
     gap: 6px;
-    height: var(--wc-control-btn-size, 24px);
+    height: var(--wc-taskbar-btn-height, 28px);
+    min-height: var(--wc-taskbar-btn-height, 28px);
+    max-height: var(--wc-taskbar-btn-height, 28px);
+    box-sizing: border-box;
+    margin: 0;
     padding: 0 4px;
+    border: 0;
+    line-height: 1;
+    appearance: none;
     background-color: var(--wc-btn-bg, #00000066);
     paint-order: stroke fill;
     color: var(--wc-btn-color, inherit);
@@ -583,6 +591,30 @@ input[type="color"].wc-color-picker::-moz-color-swatch {
 .wc-taskbar-pattern-select {
     flex: 1 1 auto;
     min-width: 0;
+}
+
+.wc-taskbar-svg-controls {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+}
+
+#wc-taskbar-svg-path-display {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.wc-taskbar-svg-btn {
+    white-space: nowrap;
+    cursor: pointer;
+    font-size: var(--font-size-12, 12px);
+}
+
+.wc-taskbar-svg-hint {
+    margin: 4px 0 0;
+    font-size: var(--font-size-11, 11px);
+    opacity: 0.72;
+    line-height: 1.3;
 }
 
 /* Controls block below preview. */

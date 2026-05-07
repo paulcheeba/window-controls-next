@@ -26,7 +26,7 @@
   "WindowControls.PinnedButtonName": "Pinned Button",
   "WindowControls.PinnedButtonHint": "Add a pin button on windows. If clicked, such windows may not be closed, only minimized. (Client)",
   "WindowControls.ButtonSizeName": "Button Size",
-  "WindowControls.ButtonSizeHint": "Set the size used for header controls and taskbar buttons. (Client)",
+  "WindowControls.ButtonSizeHint": "Set the size used for window header controls. (Client)",
   "WindowControls.ButtonSizeSmall": "Small (18px)",
   "WindowControls.ButtonSizeMedium": "Medium (20px)",
   "WindowControls.ButtonSizeLarge": "Large (24px)",
@@ -55,6 +55,8 @@
   "WindowControls.TaskbarWidthHint": "Controls how wide the taskbar bar extends. 'Canvas Only' stops the bar at the sidebar edge, preventing it from overlapping sidebar UI elements. (Client)",
   "WindowControls.TaskbarWidthFull": "Full Width",
   "WindowControls.TaskbarWidthCanvas": "Canvas Only",
+  "WindowControls.TaskbarButtonHeightName": "Taskbar Button Height",
+  "WindowControls.TaskbarButtonHeightHint": "Set the taskbar button height. (Client)",
 
   "WindowControls.MaximizeWidthName": "Maximize Width (%)",
   "WindowControls.MaximizeWidthHint": "Width of the window when using the Maximize button, as a percentage of the canvas area (10–100). (Client)",

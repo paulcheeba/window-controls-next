@@ -18,7 +18,12 @@ Note: The 13.x versions are the reworked Foundry VTT v13+ fork/modernization of 
   - Added standalone `taskbarPatterns.js` pattern registry (`WCN_PATTERNS`) loaded via `module.json` scripts.
   - Added curated pattern list including **Herringbone**, **Seigaiha**, and **Dragon Scale**.
 - **Dragon Scale SVG pattern**: Added runtime-colored Dragon Scale pattern via inline SVG data URI with color placeholder injection.
-- **Button size setting**: Added client setting for header/taskbar control size (`Small 18px`, `Medium 20px`, `Large 24px`).
+- **Custom SVG taskbar pattern (Theme Manager)**:
+  - Added a GM-authoring workflow to choose/upload SVG patterns using Foundry FilePicker.
+  - Added strict recolor mapping for SVG pattern files: white tokens map to Primary, black tokens map to Secondary.
+  - Added guidance/hints for best results with seamless black-and-white SVG pattern tiles.
+- **Header Button Size setting**: Added a client setting for window header control size (`Small 18px`, `Medium 20px`, `Large 24px`).
+- **Taskbar Button Height setting**: Added a client setting for taskbar button height (`22px` to `28px`) without affecting header control sizing.
 - **Unsaved Theme draft workflow**:
   - `Apply & Close` now writes a temporary custom entry named **Unsaved Theme**.
   - Users can switch to another theme and back to Unsaved Theme during iterative edits.
@@ -31,7 +36,12 @@ Note: The 13.x versions are the reworked Foundry VTT v13+ fork/modernization of 
   - Reworked preview/controls arrangement for clearer top-to-bottom flow.
   - Split editor text fields into dedicated input styles: value fields, color fields, and percent fields.
   - Converted taskbar pattern size/opacity from sliders to text inputs.
+  - Added GM-only Custom SVG controls in the Taskbar panel (browse/clear + guidance tooltip).
+  - Moved the Custom SVG row to sit directly after Pattern and before Primary.
   - Updated labels and groups for clarity (for example, non-pinned vs pinned taskbar text groups).
+- **Module settings layout**:
+  - Reorganized registered settings into clearer sections: Taskbar, Window Controls, Pinning, and Theming.
+  - Moved Button Size above Minimize Button under the new Window Controls section.
 - **Taskbar button styling variables expanded**:
   - Added non-pinned button background variable (`--wc-btn-bg`, default black at 40% alpha).
   - Added pinned font-weight variable (`--wc-btn-pinned-font-weight`).
@@ -39,6 +49,7 @@ Note: The 13.x versions are the reworked Foundry VTT v13+ fork/modernization of 
 ### Fixed
 - **Custom theme save collisions**: Saving with an existing custom theme name now prompts for overwrite instead of silently creating duplicate copies.
 - **Theme Manager draft persistence**: Switching away from draft edits and back now reliably restores the unsaved draft via the temporary Unsaved Theme entry.
+- **Taskbar/header sizing separation**: Taskbar buttons no longer inherit window header control sizing; header Button Size now affects only header controls while taskbar buttons use their own height setting.
 - **Taskbar text styling reliability**: Improved stroke/shadow propagation for taskbar labels and preview rendering to better reflect configured text effects.
 
 ## [14.0.1.0]
