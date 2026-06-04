@@ -86,6 +86,7 @@ class WindowControls {
     '--wc-header-btn-color',
     '--wc-header-btn-bg',
     '--wc-header-btn-pinned-color',
+    '--wc-control-btn-size',
   ];
 
   // ── Logging & Debug ───────────────────────────────────────────────────────
@@ -2077,7 +2078,7 @@ class WindowControls {
       name: game.i18n.localize('WindowControls.ButtonSizeName'),
       hint: game.i18n.localize('WindowControls.ButtonSizeHint'),
       scope: 'client',
-      config: true,
+      config: false,
       type: String,
       choices: {
         small: game.i18n.localize('WindowControls.ButtonSizeSmall'),
@@ -2247,7 +2248,7 @@ class WindowControls {
       name: game.i18n.localize('WindowControls.TaskbarButtonHeightName'),
       hint: game.i18n.localize('WindowControls.TaskbarButtonHeightHint'),
       scope: 'client',
-      config: true,
+      config: false,
       type: String,
       choices: {
         '22': '22px',
@@ -2874,6 +2875,166 @@ class WindowControls {
     return /\.svg(?:$|[?#])/i.test(p);
   }
 
+  static _withHexAlpha(hex, alpha) {
+    const base = String(hex ?? '').trim();
+    if (!/^#[0-9a-f]{6}$/i.test(base)) return base;
+    const a = Number(alpha);
+    if (!Number.isFinite(a) || a >= 0.999) return base;
+    if (a <= 0) return 'transparent';
+    const aa = Math.round(Math.max(0, Math.min(1, a)) * 255).toString(16).padStart(2, '0');
+    return `${base}${aa}`;
+  }
+
+  static _parseCssRgbChannel(part) {
+    const p = String(part ?? '').trim();
+    if (!p) return null;
+    if (p.endsWith('%')) {
+      const n = Number.parseFloat(p.slice(0, -1));
+      if (!Number.isFinite(n)) return null;
+      return Math.round(Math.max(0, Math.min(100, n)) * 2.55);
+    }
+    const n = Number.parseFloat(p);
+    if (!Number.isFinite(n)) return null;
+    return Math.round(Math.max(0, Math.min(255, n)));
+  }
+
+  static _parseCssAlphaChannel(part) {
+    const p = String(part ?? '').trim();
+    if (!p) return 1;
+    if (p.endsWith('%')) {
+      const n = Number.parseFloat(p.slice(0, -1));
+      if (!Number.isFinite(n)) return null;
+      return Math.max(0, Math.min(1, n / 100));
+    }
+    const n = Number.parseFloat(p);
+    if (!Number.isFinite(n)) return null;
+    return Math.max(0, Math.min(1, n));
+  }
+
+  static _parseExplicitCssColor(rawToken) {
+    const token = String(rawToken ?? '').trim().toLowerCase();
+    if (!token) return null;
+
+    const hexMatch = token.match(/^#([0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i);
+    if (hexMatch) {
+      const digits = hexMatch[1].toLowerCase();
+      if (digits.length === 3 || digits.length === 4) {
+        const r = Number.parseInt(digits[0] + digits[0], 16);
+        const g = Number.parseInt(digits[1] + digits[1], 16);
+        const b = Number.parseInt(digits[2] + digits[2], 16);
+        const a = digits.length === 4 ? Number.parseInt(digits[3] + digits[3], 16) / 255 : 1;
+        return { r, g, b, a };
+      }
+      const r = Number.parseInt(digits.slice(0, 2), 16);
+      const g = Number.parseInt(digits.slice(2, 4), 16);
+      const b = Number.parseInt(digits.slice(4, 6), 16);
+      const a = digits.length === 8 ? Number.parseInt(digits.slice(6, 8), 16) / 255 : 1;
+      return { r, g, b, a };
+    }
+
+    const rgbFuncMatch = token.match(/^rgba?\((.*)\)$/i);
+    if (!rgbFuncMatch) return null;
+
+    let alphaPart = '';
+    let channelsRaw = rgbFuncMatch[1].trim();
+    if (channelsRaw.includes('/')) {
+      const split = channelsRaw.split('/');
+      channelsRaw = split[0]?.trim() ?? '';
+      alphaPart = split[1]?.trim() ?? '';
+    }
+
+    const channels = channelsRaw.includes(',')
+      ? channelsRaw.split(',').map((s) => s.trim()).filter(Boolean)
+      : channelsRaw.split(/\s+/).map((s) => s.trim()).filter(Boolean);
+
+    if (channels.length < 3) return null;
+
+    const r = WindowControls._parseCssRgbChannel(channels[0]);
+    const g = WindowControls._parseCssRgbChannel(channels[1]);
+    const b = WindowControls._parseCssRgbChannel(channels[2]);
+    if (r == null || g == null || b == null) return null;
+
+    const fallbackAlpha = channels[3] ?? '';
+    const a = WindowControls._parseCssAlphaChannel(alphaPart || fallbackAlpha || '1');
+    if (a == null) return null;
+
+    return { r, g, b, a };
+  }
+
+  static _hexToRgb(hex) {
+    const h = String(hex ?? '').trim();
+    if (!/^#[0-9a-f]{6}$/i.test(h)) return null;
+    return {
+      r: Number.parseInt(h.slice(1, 3), 16),
+      g: Number.parseInt(h.slice(3, 5), 16),
+      b: Number.parseInt(h.slice(5, 7), 16),
+    };
+  }
+
+  static _rgbToHex(r, g, b) {
+    const toHex = (n) => Math.round(Math.max(0, Math.min(255, Number(n) || 0))).toString(16).padStart(2, '0');
+    return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+  }
+
+  static _mixHexColors(hexA, hexB, t) {
+    const a = WindowControls._hexToRgb(hexA);
+    const b = WindowControls._hexToRgb(hexB);
+    if (!a || !b) return String(hexA ?? '').trim() || '#000000';
+    const ratio = Math.max(0, Math.min(1, Number(t) || 0));
+    const r = a.r + (b.r - a.r) * ratio;
+    const g = a.g + (b.g - a.g) * ratio;
+    const bl = a.b + (b.b - a.b) * ratio;
+    return WindowControls._rgbToHex(r, g, bl);
+  }
+
+  static _rewriteSvgCssColorDeclarations(cssText, primaryHex, secondaryHex) {
+    const targetProps = ['fill', 'stroke', 'stop-color', 'color'];
+    let hadOtherColors = false;
+
+    const rewritten = String(cssText ?? '').replace(
+      /(fill|stroke|stop-color|color)\s*:\s*([^;}{]+)/gi,
+      (_full, propRaw, valueRaw) => {
+        const prop = String(propRaw ?? '').toLowerCase();
+        if (!targetProps.includes(prop)) return `${propRaw}: ${valueRaw}`;
+        const mapped = WindowControls._mapStrictBWColorToken(String(valueRaw ?? '').trim(), primaryHex, secondaryHex);
+        if (mapped.hadOtherColor) hadOtherColors = true;
+        return `${propRaw}: ${mapped.value}`;
+      }
+    );
+
+    return { cssText: rewritten, hadOtherColors };
+  }
+
+  static _parseSvgLength(value) {
+    const raw = String(value ?? '').trim();
+    if (!raw || /%$/.test(raw)) return null;
+    const n = Number.parseFloat(raw);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }
+
+  static _extractSvgIntrinsicSize(svgRoot) {
+    if (!svgRoot) return null;
+
+    const widthAttr = WindowControls._parseSvgLength(svgRoot.getAttribute('width'));
+    const heightAttr = WindowControls._parseSvgLength(svgRoot.getAttribute('height'));
+    if (widthAttr && heightAttr) {
+      return { width: widthAttr, height: heightAttr };
+    }
+
+    const vbRaw = String(svgRoot.getAttribute('viewBox') ?? '').trim();
+    if (!vbRaw) return null;
+    const nums = vbRaw
+      .split(/[\s,]+/)
+      .map((p) => Number.parseFloat(p))
+      .filter((n) => Number.isFinite(n));
+    if (nums.length < 4) return null;
+
+    const vbWidth = nums[2];
+    const vbHeight = nums[3];
+    if (!(vbWidth > 0 && vbHeight > 0)) return null;
+    return { width: vbWidth, height: vbHeight };
+  }
+
   static _classifyStrictBWColorToken(token) {
     const raw = String(token ?? '').trim();
     if (!raw) return { kind: 'ignore', token: raw };
@@ -2892,11 +3053,18 @@ class WindowControls {
       return { kind: 'ignore', token: raw };
     }
 
-    if (compact === 'white' || compact === '#fff' || compact === '#ffffff' || compact === 'rgb(255,255,255)' || compact === 'rgba(255,255,255,1)' || compact === 'rgba(255,255,255,1.0)') {
-      return { kind: 'white', token: raw };
-    }
-    if (compact === 'black' || compact === '#000' || compact === '#000000' || compact === 'rgb(0,0,0)' || compact === 'rgba(0,0,0,1)' || compact === 'rgba(0,0,0,1.0)') {
-      return { kind: 'black', token: raw };
+    if (compact === 'white') return { kind: 'white', token: raw, alpha: 1 };
+    if (compact === 'black') return { kind: 'black', token: raw, alpha: 1 };
+
+    const parsed = WindowControls._parseExplicitCssColor(raw);
+    if (parsed) {
+      if (parsed.a <= 0) return { kind: 'ignore', token: raw };
+      if (parsed.r === 255 && parsed.g === 255 && parsed.b === 255) return { kind: 'white', token: raw, alpha: parsed.a };
+      if (parsed.r === 0 && parsed.g === 0 && parsed.b === 0) return { kind: 'black', token: raw, alpha: parsed.a };
+      if (parsed.r === parsed.g && parsed.g === parsed.b) {
+        return { kind: 'grayscale', token: raw, alpha: parsed.a, grayRatio: parsed.r / 255 };
+      }
+      return { kind: 'other-color', token: raw };
     }
 
     // Any explicit color token that is not strict black/white remains unchanged.
@@ -2909,8 +3077,12 @@ class WindowControls {
 
   static _mapStrictBWColorToken(token, primaryHex, secondaryHex) {
     const classified = WindowControls._classifyStrictBWColorToken(token);
-    if (classified.kind === 'white') return { value: primaryHex, hadOtherColor: false };
-    if (classified.kind === 'black') return { value: secondaryHex, hadOtherColor: false };
+    if (classified.kind === 'white') return { value: WindowControls._withHexAlpha(primaryHex, classified.alpha ?? 1), hadOtherColor: false };
+    if (classified.kind === 'black') return { value: WindowControls._withHexAlpha(secondaryHex, classified.alpha ?? 1), hadOtherColor: false };
+    if (classified.kind === 'grayscale') {
+      const mixed = WindowControls._mixHexColors(secondaryHex, primaryHex, classified.grayRatio ?? 0);
+      return { value: WindowControls._withHexAlpha(mixed, classified.alpha ?? 1), hadOtherColor: false };
+    }
     if (classified.kind === 'other-color') return { value: token, hadOtherColor: true };
     return { value: token, hadOtherColor: false };
   }
@@ -2950,15 +3122,27 @@ class WindowControls {
       el.setAttribute('style', rewritten);
     });
 
+    xml.querySelectorAll('style').forEach((styleEl) => {
+      const rawCss = styleEl.textContent ?? '';
+      if (!rawCss.trim()) return;
+      const rewritten = WindowControls._rewriteSvgCssColorDeclarations(rawCss, primaryHex, secondaryHex);
+      if (rewritten.hadOtherColors) hadOtherColors = true;
+      styleEl.textContent = rewritten.cssText;
+    });
+
     const serializer = new XMLSerializer();
     const svgRoot = xml.documentElement;
     if (!svgRoot || svgRoot.nodeName.toLowerCase() !== 'svg') {
       throw new Error('Selected file is not a valid SVG document.');
     }
 
+    const intrinsic = WindowControls._extractSvgIntrinsicSize(svgRoot);
+    const aspectRatio = intrinsic && intrinsic.width > 0 ? (intrinsic.height / intrinsic.width) : 1;
+
     return {
       svgText: serializer.serializeToString(svgRoot),
       hadOtherColors,
+      aspectRatio,
     };
   }
 
@@ -2986,16 +3170,18 @@ class WindowControls {
     const rawSvg = await WindowControls._loadSvgTextFromPath(svgPath);
     const recolored = WindowControls._recolorSvgStrictBW(rawSvg, primaryHex, secondaryHex);
     const tile = Math.max(2, Math.min(128, parseInt(sizePx, 10) || 8));
+    const ratio = Number.isFinite(recolored.aspectRatio) && recolored.aspectRatio > 0 ? recolored.aspectRatio : 1;
+    const tileHeight = Math.max(1, tile * ratio);
     if (notify && recolored.hadOtherColors) {
       const noticeKey = `${svgPath}|other-colors`;
       if (!WindowControls._customSvgNoticeCache.has(noticeKey)) {
         WindowControls._customSvgNoticeCache.add(noticeKey);
-        ui?.notifications?.info?.('Window Controls: Non-black/white SVG colors were left unchanged. Only white and black are remapped.');
+        ui?.notifications?.info?.('Window Controls: Non-grayscale SVG colors were left unchanged. Black, white, and grayscale are remapped.');
       }
     }
     return {
       image: `url("data:image/svg+xml,${encodeURIComponent(recolored.svgText)}")`,
-      size: `${tile}px ${tile}px`,
+      size: `${tile}px ${tileHeight.toFixed(2)}px`,
     };
   }
 
@@ -3218,7 +3404,7 @@ class WindowControls {
 
   // Builds the Taskbar section HTML for the Theme Manager.
   // Uses dedicated classes (wc-taskbar-*) so it stays independent of the theme var system.
-  static _buildTaskbarEditorRows(taskbarColor, scrollbarColor, patternKey, patternColor, patternOpacity, patternSize, patternSvgPath, isGM) {
+  static _buildTaskbarEditorRows(taskbarColor, scrollbarColor, patternKey, patternColor, patternOpacity, patternSize, patternSvgPath, isGM, buttonHeight = '28') {
     const tbHex   = WindowControls._cssColorToHex(taskbarColor   || '#0000');
     const tbAlpha = WindowControls._extractColorAlpha(taskbarColor || '#0000');
     const scHex   = WindowControls._cssColorToHex(scrollbarColor || '#000000');
@@ -3229,6 +3415,7 @@ class WindowControls {
     const pOpac   = patternOpacity ?? 80;
     const pSize   = patternSize    ?? 4;
     const svgPath = String(patternSvgPath ?? '').trim();
+    const btnH    = String(buttonHeight ?? '28');
     const includeCustomSvgOption = isGM || WindowControls._isCustomSvgPatternKey(pKey);
 
     const patterns = [...WindowControls.TASKBAR_PATTERNS];
@@ -3240,20 +3427,18 @@ class WindowControls {
       .map(p => `<option value="${p.key}"${p.key === pKey ? ' selected' : ''}>${p.label}</option>`)
       .join('');
 
-    const svgHint = 'GMs only: Only black and white SVGs are supported. White = Primary color, Black = Secondary color. Seamless tiling patterns work best.';
+    const svgHint = 'GMs only. Only black and white SVGs are supported. White = Primary color, Black = Secondary color. Seamless tiling patterns work best. Or create your own B&W SVG sized for your preferred browser window width x 40px high. Select a file by using the browse button.';
 
     const customSvgRow = includeCustomSvgOption ? `
       <tr class="wc-theme-row" id="wc-taskbar-custom-svg-row" style="display:${WindowControls._isCustomSvgPatternKey(pKey) ? '' : 'none'};">
         <td class="wc-te-label" title="${svgHint}">Custom SVG</td>
         <td class="wc-te-fields" colspan="2">
           <div class="wc-taskbar-svg-controls">
-            <input type="text" id="wc-taskbar-svg-path-display" class="wc-theme-value-input" value="${foundry.utils.escapeHTML(svgPath)}" placeholder="Select SVG file..." readonly>
+            <input type="text" id="wc-taskbar-svg-path-display" class="wc-theme-value-input" value="${foundry.utils.escapeHTML(svgPath)}" placeholder="Select SVG file..." readonly title="${svgHint}">
             <input type="hidden" id="wc-taskbar-svg-path" value="${foundry.utils.escapeHTML(svgPath)}">
             ${isGM ? '<button type="button" id="wc-taskbar-svg-browse" class="wc-taskbar-svg-btn"><i class="fas fa-folder-open"></i> Browse</button>' : ''}
             ${isGM ? '<button type="button" id="wc-taskbar-svg-clear" class="wc-taskbar-svg-btn"><i class="fas fa-xmark"></i> Clear</button>' : ''}
           </div>
-          <p class="wc-taskbar-svg-hint" title="${svgHint}">${svgHint}</p>
-          <p class="wc-taskbar-svg-hint">Users can share their SVGs in the Window Controls Next Discord channel.</p>
         </td>
       </tr>` : '';
 
@@ -3311,6 +3496,20 @@ class WindowControls {
             <td class="wc-te-fields" colspan="2">
               <input type="text" class="wc-theme-percent-input" id="wc-taskbar-pattern-opacity" value="${pOpac}" placeholder="80" title="Pattern opacity % (0-100)">
               <span class="wc-te-alpha-label">%</span>
+            </td>
+          </tr>
+          <tr class="wc-theme-row" id="wc-taskbar-btn-height-row">
+            <td class="wc-te-label">Button Height</td>
+            <td class="wc-te-fields" colspan="2">
+              <select id="wc-taskbar-btn-height-select" class="wc-taskbar-pattern-select">
+                <option value="22"${btnH === '22' ? ' selected' : ''}>22px</option>
+                <option value="23"${btnH === '23' ? ' selected' : ''}>23px</option>
+                <option value="24"${btnH === '24' ? ' selected' : ''}>24px</option>
+                <option value="25"${btnH === '25' ? ' selected' : ''}>25px</option>
+                <option value="26"${btnH === '26' ? ' selected' : ''}>26px</option>
+                <option value="27"${btnH === '27' ? ' selected' : ''}>27px</option>
+                <option value="28"${btnH === '28' ? ' selected' : ''}>28px</option>
+              </select>
             </td>
           </tr>
         </tbody></table>
@@ -3372,6 +3571,16 @@ class WindowControls {
         <input type="text" class="wc-theme-value-input" data-var="${key}" value="${val ?? ''}" placeholder="${placeholder ?? key}">
       </td>
     </tr>`;
+
+    const sizeSelectRow = (key, label, options, val) => {
+      const optHtml = options.map(o => `<option value="${o.value}"${val === o.value ? ' selected' : ''}>${o.label}</option>`).join('');
+      return `<tr class="wc-theme-row" data-var="${key}">
+        <td class="wc-te-label">${label}</td>
+        <td class="wc-te-fields" colspan="2">
+          <select class="wc-theme-select wc-theme-value-input" data-var="${key}">${optHtml}</select>
+        </td>
+      </tr>`;
+    };
 
     // Stroke row: size field + color text field + swatch. Stored as "1px #000000".
     const strokeRow = (key, label, val) => {
@@ -3460,8 +3669,14 @@ class WindowControls {
         ].join('')
       },
       {
-        label: 'Header Inject Buttons',
+        label: 'Window Controls Buttons',
         rows: () => [
+          sizeSelectRow('--wc-control-btn-size', 'Button Size', [
+            { value: '18px', label: '18px' },
+            { value: '20px', label: '20px' },
+            { value: '22px', label: '22px' },
+            { value: '24px', label: '24px' },
+          ], vars['--wc-control-btn-size'] || '24px'),
           colorRow('--wc-header-btn-color',        'Icon Color',      vars['--wc-header-btn-color']),
           colorRow('--wc-header-btn-bg',           'Background',      vars['--wc-header-btn-bg']),
           colorRow('--wc-header-btn-pinned-color', 'Pin Active Color',vars['--wc-header-btn-pinned-color']),
@@ -3494,6 +3709,7 @@ class WindowControls {
           <div class="wc-preview-window-body">Window content…</div>
         </div>
         <div class="wc-preview-taskbar" id="wc-preview-taskbar">
+          <div class="wc-preview-taskbar-bg" id="wc-preview-taskbar-bg"></div>
           <span class="wc-preview-btn wc-preview-btn-normal">Normal Window</span>
           <span class="wc-preview-btn wc-preview-btn-pinned">Pinned Window</span>
         </div>
@@ -3587,6 +3803,7 @@ class WindowControls {
       patternOpacity: parseInt(dialogEl.querySelector('#wc-taskbar-pattern-opacity')?.value) || 80,
       patternSize:    parseInt(dialogEl.querySelector('#wc-taskbar-pattern-size')?.value) || 4,
       patternSvgPath: svgPath,
+      buttonHeight:   dialogEl.querySelector('#wc-taskbar-btn-height-select')?.value || '28',
     };
   }
 
@@ -3611,6 +3828,7 @@ class WindowControls {
     set('wc-taskbar-pattern-color-swatch', pcBase);
     set('wc-taskbar-svg-path',            svgPath);
     set('wc-taskbar-svg-path-display',    svgPath);
+    set('wc-taskbar-btn-height-select',   String(taskbar.buttonHeight || '28'));
 
     const opacityEl = dialogEl.querySelector('#wc-taskbar-pattern-opacity');
     if (opacityEl) {
@@ -3690,12 +3908,13 @@ class WindowControls {
     const taskbarColorText  = dialogEl.querySelector('#wc-taskbar-color-text');
     const taskbarAlphaInput = dialogEl.querySelector('#wc-taskbar-color-alpha');
     const previewTaskbar = preview.querySelector('#wc-preview-taskbar');
-    if (previewTaskbar && taskbarColorText) {
+    const previewTaskbarBg = preview.querySelector('#wc-preview-taskbar-bg');
+    if (previewTaskbar && previewTaskbarBg && taskbarColorText) {
       const hex  = taskbarColorText.value.trim() || '#000000';
       const pct  = Math.max(0, Math.min(100, parseInt(taskbarAlphaInput?.value) || 100));
       const aa   = pct < 100 ? Math.round(pct / 100 * 255).toString(16).padStart(2, '0') : '';
       const base = /^#[0-9a-f]{6}$/i.test(hex) ? hex : WindowControls._cssColorToHex(hex);
-      previewTaskbar.style.backgroundColor = aa ? base + aa : base;
+      previewTaskbarBg.style.backgroundColor = aa ? base + aa : base;
 
       // Apply pattern overlay.
       const patKey   = dialogEl.querySelector('#wc-taskbar-pattern')?.value || 'diagonal';
@@ -3706,9 +3925,10 @@ class WindowControls {
       const patBgHex = /^#[0-9a-f]{6}$/i.test(base) ? base : WindowControls._cssColorToHex(base);
       const opVal    = (Math.max(0, Math.min(100, patOpac)) / 100).toFixed(2);
       // Reset before applying.
-      previewTaskbar.style.backgroundImage    = '';
-      previewTaskbar.style.backgroundSize     = '';
-      previewTaskbar.style.backgroundPosition = '';
+      previewTaskbarBg.style.backgroundImage    = '';
+      previewTaskbarBg.style.backgroundSize     = '';
+      previewTaskbarBg.style.backgroundPosition = '';
+      previewTaskbarBg.style.opacity            = '1';
       previewTaskbar.style.webkitMaskImage    = '';
       previewTaskbar.style.maskImage          = '';
       previewTaskbar.style.webkitMaskSize     = '';
@@ -3721,22 +3941,22 @@ class WindowControls {
           void (async () => {
             try {
               const custom = await WindowControls._buildCustomSvgPatternCSS(patSvgPath, patBgHex, patHex, patSize, { notify: false });
-              previewTaskbar.style.backgroundImage = custom.image;
-              previewTaskbar.style.backgroundSize = custom.size;
-              previewTaskbar.style.backgroundPosition = '0 0';
-              previewTaskbar.style.opacity = opVal;
+              previewTaskbarBg.style.backgroundImage = custom.image;
+              previewTaskbarBg.style.backgroundSize = custom.size;
+              previewTaskbarBg.style.backgroundPosition = '0 0';
+              previewTaskbarBg.style.opacity = opVal;
             } catch {
-              previewTaskbar.style.backgroundImage = 'none';
+              previewTaskbarBg.style.backgroundImage = 'none';
             }
           })();
         }
       } else {
         const patCSS = WindowControls._taskbarPatternCSS(patKey, patHex, patSize, patBgHex);
         if (patCSS && patCSS.image !== 'none') {
-          previewTaskbar.style.backgroundImage    = patCSS.image;
-          previewTaskbar.style.backgroundSize     = patCSS.size;
-          previewTaskbar.style.backgroundPosition = patCSS.position || '0 0';
-          previewTaskbar.style.opacity            = opVal;
+          previewTaskbarBg.style.backgroundImage    = patCSS.image;
+          previewTaskbarBg.style.backgroundSize     = patCSS.size;
+          previewTaskbarBg.style.backgroundPosition = patCSS.position || '0 0';
+          previewTaskbarBg.style.opacity            = opVal;
         }
       }
     }
@@ -3931,6 +4151,7 @@ class WindowControls {
     let patternOpacityVal = 80;
     let patternSizeVal = 4;
     let patternSvgPathVal = '';
+    let taskbarBtnHeightVal = '28';
     try { taskbarColorVal    = game.settings.get(WindowControls.MODULE_ID, 'taskbarColor')          ?? '#0000'; } catch {}
     try { scrollbarColorVal  = game.settings.get(WindowControls.MODULE_ID, 'taskbarScrollbarColor') ?? ''; } catch {}
     try { patternKeyVal      = game.settings.get(WindowControls.MODULE_ID, 'taskbarPattern')        ?? 'diagonal'; } catch {}
@@ -3938,7 +4159,8 @@ class WindowControls {
     try { patternOpacityVal  = game.settings.get(WindowControls.MODULE_ID, 'taskbarPatternOpacity') ?? 80; } catch {}
     try { patternSizeVal     = game.settings.get(WindowControls.MODULE_ID, 'taskbarPatternSize')    ?? 4; } catch {}
     try { patternSvgPathVal  = game.settings.get(WindowControls.MODULE_ID, 'taskbarPatternCustomSvgPath') ?? ''; } catch {}
-    const taskbarRows = WindowControls._buildTaskbarEditorRows(taskbarColorVal, scrollbarColorVal, patternKeyVal, patternColorVal, patternOpacityVal, patternSizeVal, patternSvgPathVal, isGM);
+    try { taskbarBtnHeightVal = game.settings.get(WindowControls.MODULE_ID, 'taskbarButtonHeight')  ?? '28'; } catch {}
+    const taskbarRows = WindowControls._buildTaskbarEditorRows(taskbarColorVal, scrollbarColorVal, patternKeyVal, patternColorVal, patternOpacityVal, patternSizeVal, patternSvgPathVal, isGM, taskbarBtnHeightVal);
 
     const content = `
       <div class="wc-theme-manager">
@@ -4444,6 +4666,14 @@ class WindowControls {
       } catch {}
     }
 
+    // Apply taskbar button height.
+    const taskbarBtnHeightEl = dialogEl.querySelector('#wc-taskbar-btn-height-select');
+    if (taskbarBtnHeightEl) {
+      const btnH = taskbarBtnHeightEl.value || '28';
+      WindowControls._setTaskbarButtonHeight(btnH);
+      try { await game.settings.set(WindowControls.MODULE_ID, 'taskbarButtonHeight', btnH); } catch {}
+    }
+
     if (selectedId !== UNSAVED_THEME_ID) {
       try {
         if (isGM) {
@@ -4704,8 +4934,8 @@ class WindowControls {
     // Remove previous injected headers and GM-only buttons if SettingsConfig re-renders.
     moduleRoot.find('.wc-settings-header, .wc-settings-btn-group').remove();
 
-    const taskbarKeys = ['organizedMinimize', 'taskbarWidth', 'taskbarButtonHeight', 'clickOutsideMinimize', 'debugLogging', 'debugVerbose'];
-    const windowControlsKeys = ['buttonSize', 'minimizeButton', 'defaultSizeButton', 'maximizeButton', 'maximizeWidth', 'maximizeHeight'];
+    const taskbarKeys = ['organizedMinimize', 'taskbarWidth', 'clickOutsideMinimize', 'debugLogging', 'debugVerbose'];
+    const windowControlsKeys = ['minimizeButton', 'defaultSizeButton', 'maximizeButton', 'maximizeWidth', 'maximizeHeight'];
     const pinningKeys = ['pinnedButton', 'pinnedDoubleTapping', 'rememberPinnedWindows'];
     const themingKeys = ['wcThemeEnabled'];
 
